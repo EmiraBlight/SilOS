@@ -96,6 +96,18 @@ impl Writer {
         }
     }
 
+    pub fn clear(&mut self) {
+        let color_code = self.color_code;
+        for i in 0..24 {
+            for j in 0..79 {
+                self.buffer.chars[i][j].write(ScreenChar {
+                    ascii_character: b' ',
+                    color_code,
+                });
+            }
+        }
+    }
+
     pub fn set_color(&mut self, color_code: ColorCode) {
         self.color_code = color_code;
     }
