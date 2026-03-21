@@ -1,12 +1,18 @@
 use crate::canvas::TextCanvas;
 use crate::vga_buffer::{Color, ColorCode};
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
+pub static W_PRESSED: AtomicBool = AtomicBool::new(false);
+pub static S_PRESSED: AtomicBool = AtomicBool::new(false);
+
 pub struct PongGame {
     canvas: TextCanvas,
     ball_x: isize,
     ball_y: isize,
     dx: isize,
     dy: isize,
+    paddle_y: isize, // Track the left paddle
 }
 
 impl PongGame {
@@ -17,6 +23,7 @@ impl PongGame {
             ball_y: 12,
             dx: 1,
             dy: 1,
+            paddle_y: 10,
         }
     }
 
@@ -26,19 +33,14 @@ impl PongGame {
             self.update();
             self.wait();
 
-            // Example Exit Condition: Ball goes too far past a paddle
             if self.ball_x < 1 || self.ball_x > 79 {
                 running = false;
             }
-
-            // Future: check a global flag for the Escape key here
         }
 
-        // Before returning, clear the screen to leave it "blank"
         self.canvas.clear();
     }
     fn wait(&self) {
-        // Crude delay until you implement a proper sleep based on PIT/APIC timers
         for _ in 0..1_000_000 {
             unsafe {
                 core::arch::asm!("nop");
@@ -47,10 +49,33 @@ impl PongGame {
     }
 
     pub fn update(&mut self) {
-        // Clear previous frame
+        let paddle_height = 5;
+
+        // 3. Read inputs and move paddle
+        if W_PRESSED.load(Ordering::Relaxed) {
+            self.paddle_y = self.paddle_y.saturating_sub(1);
+        }
+        if S_PRESSED.load(Ordering::Relaxed) {
+            if self.paddle_y < 24 - paddle_height {
+                self.paddle_y += 1;
+            }
+        }
+
         self.canvas.clear();
 
-        // Draw Ball
+        let paddle_x = 2;
+        for offset in 0..paddle_height {
+            let current_y = self.paddle_y + offset;
+            if current_y >= 0 && current_y < 25 {
+                self.canvas.set_char(
+                    paddle_x,
+                    current_y as usize,
+                    b'|',
+                    ColorCode::new(Color::Cyan, Color::Black),
+                );
+            }
+        }
+
         self.canvas.set_char(
             self.ball_x as usize,
             self.ball_y as usize,
@@ -58,16 +83,21 @@ impl PongGame {
             ColorCode::new(Color::White, Color::Black),
         );
 
-        // Movement Logic
         self.ball_x += self.dx;
         self.ball_y += self.dy;
 
-        // Bounce Logic
         if self.ball_y <= 0 || self.ball_y >= 24 {
             self.dy = -self.dy;
         }
-        if self.ball_x <= 0 || self.ball_x >= 79 {
+        if self.ball_x >= 79 {
             self.dx = -self.dx;
+        }
+
+        if (0..5).contains(&self.ball_x)
+            && (self.paddle_y - 4..self.paddle_y + 4).contains(&self.ball_y)
+            && self.dx < 0
+        {
+            self.dx = -self.dx
         }
     }
 }

@@ -7,17 +7,11 @@
 
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use myOS::memory;
-use myOS::memory::translate_addr;
 use myOS::println;
-use myOS::vga_buffer::WRITER;
-use x86_64::{VirtAddr, structures::paging::Translate};
 
 entry_point!(kernel_main);
 
 extern crate alloc;
-
-use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use myOS::allocator;
@@ -35,12 +29,15 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Setup Heap
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    // Launch Pong
-    //let mut game = PongGame::new();
-    //game.run(); // This will never return
-    println!("Test");
-    WRITER.lock().clear();
-    myOS::hlt_loop();
+    loop {
+        if myOS::interrupts::LAUNCH_PONG.load(core::sync::atomic::Ordering::Relaxed) {
+            let mut game = PongGame::new();
+            game.run();
+            println!("Game ended. Returned to shell.");
+            myOS::interrupts::LAUNCH_PONG.swap(false, core::sync::atomic::Ordering::Relaxed);
+            x86_64::instructions::hlt();
+        }
+    }
 }
 
 #[cfg(not(test))]

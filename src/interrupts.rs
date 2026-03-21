@@ -1,21 +1,19 @@
 use crate::gdt;
 use crate::hlt_loop;
-use crate::pong::PongGame;
 use crate::print;
 use crate::println;
 use crate::shell::SHELL;
 use crate::vga_buffer::WRITER;
-use alloc::borrow::ToOwned;
-use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::string::ToString;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
+pub static LAUNCH_PONG: AtomicBool = AtomicBool::new(false);
 
 pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET) });
@@ -61,17 +59,18 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
 
-    // Explicitly handle backspace scancode
     if scancode == 0x0E {
         crate::vga_buffer::_backspace();
         *&SHELL.lock().backspace();
     } else if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                // Unicode characters (Letters, numbers, space, etc.)
                 DecodedKey::Unicode(character) => {
-                    // Filter out Tab (\t) or other unwanted escapes if needed
-                    if character != '\t' && character != '\n' {
+                    if character != '\t'
+                        && character != '\n'
+                        && !crate::interrupts::LAUNCH_PONG
+                            .load(core::sync::atomic::Ordering::Relaxed)
+                    {
                         print!("{}", character);
                         *&SHELL.lock().add(character as u8);
                     } else if character == '\n' {
@@ -83,8 +82,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                                 "" => (),
                                 "clear" => WRITER.lock().clear(),
                                 "pong" => {
-                                    let mut game = PongGame::new();
-                                    game.run();
+                                    LAUNCH_PONG.store(true, Ordering::Relaxed);
                                 }
                                 a => println!("{} is not a command!", a),
                             },
@@ -93,9 +91,20 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                         *&SHELL.lock().clear();
                     }
                 }
-                // RawKey covers Shift, Ctrl, Alt, CapsLock, F-keys, etc.
-                // By doing nothing here, we ignore them.
+
                 DecodedKey::RawKey(_) => {}
+            }
+        }
+
+        if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+            use pc_keyboard::KeyCode;
+
+            let is_pressed = key_event.state == pc_keyboard::KeyState::Down;
+
+            match key_event.code {
+                KeyCode::W => crate::pong::W_PRESSED.store(is_pressed, Ordering::Relaxed),
+                KeyCode::S => crate::pong::S_PRESSED.store(is_pressed, Ordering::Relaxed),
+                _ => {}
             }
         }
     }
