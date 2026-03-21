@@ -1,7 +1,14 @@
 use crate::gdt;
 use crate::hlt_loop;
+use crate::pong::PongGame;
 use crate::print;
 use crate::println;
+use crate::shell::SHELL;
+use crate::vga_buffer::WRITER;
+use alloc::borrow::ToOwned;
+use alloc::rc::Rc;
+use alloc::string::String;
+use alloc::string::ToString;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -57,6 +64,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // Explicitly handle backspace scancode
     if scancode == 0x0E {
         crate::vga_buffer::_backspace();
+        *&SHELL.lock().backspace();
     } else if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
@@ -65,8 +73,24 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                     // Filter out Tab (\t) or other unwanted escapes if needed
                     if character != '\t' && character != '\n' {
                         print!("{}", character);
+                        *&SHELL.lock().add(character as u8);
                     } else if character == '\n' {
                         print!("\n");
+
+                        match &*&SHELL.lock().getcmd() {
+                            None => (),
+                            Some(s) => match s.as_str() {
+                                "" => (),
+                                "clear" => WRITER.lock().clear(),
+                                "pong" => {
+                                    let mut game = PongGame::new();
+                                    game.run();
+                                }
+                                a => println!("{} is not a command!", a),
+                            },
+                        }
+
+                        *&SHELL.lock().clear();
                     }
                 }
                 // RawKey covers Shift, Ctrl, Alt, CapsLock, F-keys, etc.

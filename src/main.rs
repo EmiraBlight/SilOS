@@ -10,6 +10,7 @@ use core::panic::PanicInfo;
 use myOS::memory;
 use myOS::memory::translate_addr;
 use myOS::println;
+use myOS::vga_buffer::WRITER;
 use x86_64::{VirtAddr, structures::paging::Translate};
 
 entry_point!(kernel_main);
@@ -35,9 +36,10 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
     // Launch Pong
-    let mut game = PongGame::new();
-    game.run(); // This will never return
-    println!("Game ended, returned to kernal");
+    //let mut game = PongGame::new();
+    //game.run(); // This will never return
+    println!("Test");
+    WRITER.lock().clear();
     myOS::hlt_loop();
 }
 
