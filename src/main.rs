@@ -7,17 +7,11 @@
 
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use myOS::memory;
-use myOS::memory::translate_addr;
 use myOS::println;
-use myOS::vga_buffer::WRITER;
-use x86_64::{VirtAddr, structures::paging::Translate};
 
 entry_point!(kernel_main);
 
 extern crate alloc;
-
-use alloc::{boxed::Box, rc::Rc, vec, vec::Vec};
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use myOS::allocator;

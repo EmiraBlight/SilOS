@@ -1,14 +1,9 @@
 use crate::gdt;
 use crate::hlt_loop;
-use crate::pong::PongGame;
 use crate::print;
 use crate::println;
 use crate::shell::SHELL;
 use crate::vga_buffer::WRITER;
-use alloc::borrow::ToOwned;
-use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::string::ToString;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;

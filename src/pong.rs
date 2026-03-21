@@ -94,7 +94,7 @@ impl PongGame {
         }
 
         if (0..5).contains(&self.ball_x)
-            && (self.paddle_y - 2..self.paddle_y + 2).contains(&self.ball_y)
+            && (self.paddle_y - 4..self.paddle_y + 4).contains(&self.ball_y)
             && self.dx < 0
         {
             self.dx = -self.dx
