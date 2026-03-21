@@ -35,12 +35,15 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Setup Heap
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
-    // Launch Pong
-    //let mut game = PongGame::new();
-    //game.run(); // This will never return
-    println!("Test");
-    WRITER.lock().clear();
-    myOS::hlt_loop();
+    loop {
+        if myOS::interrupts::LAUNCH_PONG.load(core::sync::atomic::Ordering::Relaxed) {
+            let mut game = PongGame::new();
+            game.run();
+            println!("Game ended. Returned to shell.");
+            myOS::interrupts::LAUNCH_PONG.swap(false, core::sync::atomic::Ordering::Relaxed);
+            x86_64::instructions::hlt();
+        }
+    }
 }
 
 #[cfg(not(test))]
