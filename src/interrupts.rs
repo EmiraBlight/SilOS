@@ -76,19 +76,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                     } else if character == '\n' {
                         print!("\n");
 
-                        match &*&SHELL.lock().getcmd() {
-                            None => (),
-                            Some(s) => match s.as_str() {
-                                "" => (),
-                                "clear" => WRITER.lock().clear(),
-                                "pong" => {
-                                    LAUNCH_PONG.store(true, Ordering::Relaxed);
-                                }
-                                a => println!("{} is not a command!", a),
-                            },
-                        }
-
-                        *&SHELL.lock().clear();
+                        crate::commands::COMMAND_PENDING
+                            .store(true, core::sync::atomic::Ordering::Release);
                     }
                 }
 
@@ -133,14 +122,13 @@ lazy_static! {
         let mut idt = InterruptDescriptorTable::new();
         idt.breakpoint.set_handler_fn(breakpoint_handler);
         unsafe {
-            idt.double_fault.set_handler_fn(double_fault_handler)
-                .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX); // new
+            idt.double_fault
+                .set_handler_fn(double_fault_handler)
+                .set_stack_index(gdt::DOUBLE_FAULT_IST_INDEX);
         }
-        idt[InterruptIndex::Timer.as_usize()]
-                    .set_handler_fn(timer_interrupt_handler);
-        idt[InterruptIndex::Keyboard.as_usize()]
-                    .set_handler_fn(keyboard_interrupt_handler);
-         idt.page_fault.set_handler_fn(page_fault_handler);
+        idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
+        idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt.page_fault.set_handler_fn(page_fault_handler);
         idt
     };
 }

@@ -16,7 +16,6 @@ extern crate alloc;
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use myOS::allocator;
     use myOS::memory::{self, BootInfoFrameAllocator};
-    use myOS::pong::PongGame;
     use x86_64::VirtAddr;
 
     myOS::init();
@@ -29,13 +28,28 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Setup Heap
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
+    myOS::commands::init_cmds();
+
     loop {
-        if myOS::interrupts::LAUNCH_PONG.load(core::sync::atomic::Ordering::Relaxed) {
-            let mut game = PongGame::new();
-            game.run();
-            println!("Game ended. Returned to shell.");
-            myOS::interrupts::LAUNCH_PONG.swap(false, core::sync::atomic::Ordering::Relaxed);
-            x86_64::instructions::hlt();
+        x86_64::instructions::interrupts::disable();
+
+        if myOS::commands::COMMAND_PENDING.swap(false, core::sync::atomic::Ordering::Acquire) {
+            x86_64::instructions::interrupts::enable();
+
+            let cmd_opt = {
+                let mut shell = myOS::shell::SHELL.lock();
+                let cmd = shell.getcmd().clone();
+                shell.clear();
+                cmd
+            };
+
+            if let Some(cmd_str) = cmd_opt {
+                if !cmd_str.trim().is_empty() {
+                    myOS::commands::run_cmd(cmd_str);
+                }
+            }
+        } else {
+            x86_64::instructions::interrupts::enable_and_hlt();
         }
     }
 }
