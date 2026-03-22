@@ -3,7 +3,6 @@ use crate::hlt_loop;
 use crate::print;
 use crate::println;
 use crate::shell::SHELL;
-use crate::vga_buffer::WRITER;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
