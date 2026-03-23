@@ -10,8 +10,7 @@ where
 
 impl<T, V> Tuple<T, V>
 where
-    T: Hashable,
-    T: PartialEq,
+    T: Hashable + PartialEq,
 {
     fn matches(&self, key: &T) -> bool {
         self.key == *key
@@ -59,14 +58,14 @@ where
         n
     }
 
-    pub fn get(&self, key: T) -> Option<&Tuple<T, V>> {
-        let hash = key.hash();
+    pub fn get(&self, key: T) -> Option<&V> {
+        let hash = key.hash() % self.buckets.len();
         if self.buckets[hash].is_empty() {
             return None;
         } else {
             for element in self.buckets[hash].iter() {
                 if element.matches(&key) {
-                    return Some(element);
+                    return Some(element.to_v());
                 }
             }
             return None;
