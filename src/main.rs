@@ -51,9 +51,16 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     let mut a: HashMap<key, u128> = HashMap::new();
 
     a.put(key { k: 12 }, 122);
-    let res = a.get(key { k: 12 }).unwrap();
+    {
+        let res = a.get(key { k: 12 }).unwrap();
+        println!("Test: {:?}", res.to_v());
+    }
+    a.remove(key { k: 12 }, 122);
 
-    println!("Test: {:?}", res.toV());
+    {
+        let res = a.get(key { k: 12 }).unwrap();
+        println!("Test: {:?}", res.to_v());
+    }
 
     loop {
         x86_64::instructions::interrupts::disable();

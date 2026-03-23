@@ -17,8 +17,18 @@ where
         self.key == *key
     }
 
-    pub fn toV(&self) -> &V {
+    pub fn to_v(&self) -> &V {
         &self.value
+    }
+}
+
+impl<T, V> PartialEq for Tuple<T, V>
+where
+    T: Hashable,
+    T: PartialEq,
+{
+    fn eq(&self, other: &Tuple<T, V>) -> bool {
+        self.key == other.key
     }
 }
 
@@ -67,5 +77,12 @@ where
         let hash = key.hash();
 
         self.buckets[hash].push(Tuple { key, value });
+    }
+
+    pub fn remove(&mut self, key: T, value: V) {
+        let hash = key.hash();
+        let r = Tuple { key, value };
+
+        self.buckets[hash].retain(|x| *x != r);
     }
 }
