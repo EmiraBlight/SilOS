@@ -1,18 +1,18 @@
 use alloc::vec::Vec;
 
-pub struct Tuple<T, V>
+pub struct Kuple<K, V>
 where
-    T: Hashable,
+    K: Hashable,
 {
-    key: T,
+    key: K,
     value: V,
 }
 
-impl<T, V> Tuple<T, V>
+impl<K, V> Kuple<K, V>
 where
-    T: Hashable + PartialEq,
+    K: Hashable + PartialEq,
 {
-    fn matches(&self, key: &T) -> bool {
+    fn matches(&self, key: &K) -> bool {
         self.key == *key
     }
 
@@ -21,12 +21,12 @@ where
     }
 }
 
-impl<T, V> PartialEq for Tuple<T, V>
+impl<K, V> PartialEq for Kuple<K, V>
 where
-    T: Hashable,
-    T: PartialEq,
+    K: Hashable,
+    K: PartialEq,
 {
-    fn eq(&self, other: &Tuple<T, V>) -> bool {
+    fn eq(&self, other: &Kuple<K, V>) -> bool {
         self.key == other.key
     }
 }
@@ -35,19 +35,19 @@ pub trait Hashable {
     fn hash(&self) -> usize;
 }
 
-pub struct HashMap<T, V>
+pub struct HashMap<K, V>
 where
-    T: Hashable,
+    K: Hashable,
 {
-    buckets: Vec<Vec<Tuple<T, V>>>,
+    buckets: Vec<Vec<Kuple<K, V>>>,
 }
 
-impl<T, V> HashMap<T, V>
+impl<K, V> HashMap<K, V>
 where
-    T: Hashable,
-    T: PartialEq,
+    K: Hashable,
+    K: PartialEq,
 {
-    pub fn new() -> HashMap<T, V> {
+    pub fn new() -> HashMap<K, V> {
         let mut n = HashMap {
             buckets: Vec::new(),
         };
@@ -58,7 +58,7 @@ where
         n
     }
 
-    pub fn get(&self, key: T) -> Option<&V> {
+    pub fn get(&self, key: K) -> Option<&V> {
         let hash = key.hash() % self.buckets.len();
         if self.buckets[hash].is_empty() {
             return None;
@@ -72,15 +72,15 @@ where
         }
     }
 
-    pub fn put(&mut self, key: T, value: V) {
+    pub fn put(&mut self, key: K, value: V) {
         let hash = key.hash();
 
-        self.buckets[hash].push(Tuple { key, value });
+        self.buckets[hash].push(Kuple { key, value });
     }
 
-    pub fn remove(&mut self, key: T, value: V) {
+    pub fn remove(&mut self, key: K, value: V) {
         let hash = key.hash();
-        let r = Tuple { key, value };
+        let r = Kuple { key, value };
 
         self.buckets[hash].retain(|x| *x != r);
     }
