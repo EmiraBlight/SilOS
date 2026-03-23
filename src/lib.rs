@@ -16,6 +16,7 @@ pub mod serial;
 pub mod shell;
 pub mod vga_buffer;
 extern crate alloc;
+pub mod hashmap;
 pub mod pong;
 use core::panic::PanicInfo;
 

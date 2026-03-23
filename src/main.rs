@@ -7,7 +7,23 @@
 
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use myOS::println;
+use myOS::{hashmap::Hashable, println};
+
+struct key {
+    k: u128,
+}
+
+impl Hashable for key {
+    fn hash(&self) -> usize {
+        self.k as usize
+    }
+}
+
+impl PartialEq for key {
+    fn eq(&self, other: &key) -> bool {
+        self.k == other.k
+    }
+}
 
 entry_point!(kernel_main);
 
@@ -29,6 +45,15 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
     myOS::commands::init_cmds();
+
+    use myOS::hashmap::HashMap;
+
+    let mut a: HashMap<key, u128> = HashMap::new();
+
+    a.put(key { k: 12 }, 122);
+    let res = a.get(key { k: 12 }).unwrap();
+
+    println!("Test: {:?}", res.toV());
 
     loop {
         x86_64::instructions::interrupts::disable();
