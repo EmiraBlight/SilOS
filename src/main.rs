@@ -52,14 +52,27 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     a.put(key { k: 12 }, 122);
     {
-        let res = a.get(key { k: 12 }).unwrap();
-        println!("Test: {:?}", res.to_v());
+        let res = a.get(key { k: 12 });
+        match res {
+           Some(res) => println!("Result was: {}",*res),
+           None => println!("No result to print"),
+       }
+    
     }
+
+
     a.remove(key { k: 12 }, 122);
 
     {
-        let res = a.get(key { k: 12 }).unwrap();
-        println!("Test: {:?}", res.to_v());
+        let res = a.get(key { k: 12 });
+
+
+       match res {
+           Some(res) => println!("Result was: {}",*res),
+           None => println!("No result to print"),
+       }
+
+        println!("Test: {:?}", res);
     }
 
     loop {

@@ -12,7 +12,7 @@ pub struct PongGame {
     ball_y: isize,
     dx: isize,
     dy: isize,
-    paddle_y: isize, // Track the left paddle
+    paddle1_y: isize, // Track the left paddle
 }
 
 impl PongGame {
@@ -23,7 +23,7 @@ impl PongGame {
             ball_y: 12,
             dx: 1,
             dy: 1,
-            paddle_y: 10,
+            paddle1_y: 10,
         }
     }
 
@@ -53,11 +53,11 @@ impl PongGame {
 
         // 3. Read inputs and move paddle
         if W_PRESSED.load(Ordering::Relaxed) {
-            self.paddle_y = self.paddle_y.saturating_sub(1);
+            self.paddle1_y = self.paddle1_y.saturating_sub(1);
         }
         if S_PRESSED.load(Ordering::Relaxed) {
-            if self.paddle_y < 24 - paddle_height {
-                self.paddle_y += 1;
+            if self.paddle1_y < 24 - paddle_height {
+                self.paddle1_y += 1;
             }
         }
 
@@ -65,7 +65,7 @@ impl PongGame {
 
         let paddle_x = 2;
         for offset in 0..paddle_height {
-            let current_y = self.paddle_y + offset;
+            let current_y = self.paddle1_y + offset;
             if current_y >= 0 && current_y < 25 {
                 self.canvas.set_char(
                     paddle_x,
@@ -94,7 +94,7 @@ impl PongGame {
         }
 
         if (0..5).contains(&self.ball_x)
-            && (self.paddle_y - 4..self.paddle_y + 4).contains(&self.ball_y)
+            && (self.paddle1_y - 4..self.paddle1_y + 4).contains(&self.ball_y)
             && self.dx < 0
         {
             self.dx = -self.dx
