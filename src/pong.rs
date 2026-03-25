@@ -2,6 +2,9 @@ use crate::canvas::TextCanvas;
 use crate::vga_buffer::{Color, ColorCode};
 
 use core::sync::atomic::{AtomicBool, Ordering};
+use crate::commands::ProcessError;
+use crate::alloc::string::ToString;
+use crate::commands::Success;
 
 pub static W_PRESSED: AtomicBool = AtomicBool::new(false);
 pub static S_PRESSED: AtomicBool = AtomicBool::new(false);
@@ -31,18 +34,25 @@ impl PongGame {
         }
     }
 
-    pub fn run(&mut self) {
-        let mut running = true;
-        while running {
+    pub fn run(&mut self) ->Result<Success,ProcessError> {
+        while true {
             self.update();
             self.wait();
 
-            if self.ball_x < 1 || self.ball_x > 79 {
-                running = false;
+            if self.ball_x < 1 {
+                self.canvas.clear();
+                return Ok(Success{success_code:"player 2 wins!".to_string(),print_code:true})
             }
-        }
 
-        self.canvas.clear();
+
+            if self.ball_x > 79{
+                self.canvas.clear();
+                return Ok(Success{success_code:"player 1 wins!".to_string(),print_code:true})
+            }
+
+        }
+        Err(ProcessError{error_code:"pong failed somehow!".to_string()})
+
     }
     fn wait(&self) {
         for _ in 0..1_000_000 {

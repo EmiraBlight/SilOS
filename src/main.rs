@@ -90,7 +90,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
             if let Some(cmd_str) = cmd_opt {
                 if !cmd_str.trim().is_empty() {
-                    myOS::commands::run_cmd(cmd_str);
+                    let response = myOS::commands::run_cmd(cmd_str);
+
+                    if let Err(ref error) = response{
+                        println!("ERROR: {}", error.error_str())
+                    }
+                    if let Ok(error) = response{
+                        if *error.is_print(){
+                            println!("Program succeded with code: {}",error.success_str());
+                        }
+                    }
+
+
                 }
             }
         } else {
