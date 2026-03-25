@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-pub struct Kuple<K, V>
+pub struct Tuple<K, V>
 where
     K: Hashable,
 {
@@ -8,7 +8,7 @@ where
     value: V,
 }
 
-impl<K, V> Kuple<K, V>
+impl<K, V> Tuple<K, V>
 where
     K: Hashable + PartialEq,
 {
@@ -21,12 +21,12 @@ where
     }
 }
 
-impl<K, V> PartialEq for Kuple<K, V>
+impl<K, V> PartialEq for Tuple<K, V>
 where
     K: Hashable,
     K: PartialEq,
 {
-    fn eq(&self, other: &Kuple<K, V>) -> bool {
+    fn eq(&self, other: &Tuple<K, V>) -> bool {
         self.key == other.key
     }
 }
@@ -39,7 +39,7 @@ pub struct HashMap<K, V>
 where
     K: Hashable,
 {
-    buckets: Vec<Vec<Kuple<K, V>>>,
+    buckets: Vec<Vec<Tuple<K, V>>>,
 }
 
 impl<K, V> HashMap<K, V>
@@ -75,12 +75,12 @@ where
     pub fn put(&mut self, key: K, value: V) {
         let hash = key.hash();
 
-        self.buckets[hash].push(Kuple { key, value });
+        self.buckets[hash].push(Tuple { key, value });
     }
 
     pub fn remove(&mut self, key: K, value: V) {
         let hash = key.hash();
-        let r = Kuple { key, value };
+        let r = Tuple { key, value };
 
         self.buckets[hash].retain(|x| *x != r);
     }
