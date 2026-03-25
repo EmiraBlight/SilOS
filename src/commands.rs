@@ -7,25 +7,59 @@ use alloc::string::String;
 use core::sync::atomic::AtomicBool;
 use lazy_static::lazy_static;
 use spin::Mutex;
-
+use alloc::format;
+use crate::alloc::string::ToString;
 pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
 
-type CommandFn = fn() -> ();
 
-fn clear() {
-    WRITER.lock().clear()
+pub struct ProcessError{
+    pub error_code: String,
 }
 
-fn pong() {
+
+impl ProcessError{
+    pub fn error_str (&self)->&String{
+        &self.error_code
+    }
+}
+
+pub struct Success{
+    pub success_code: String,
+    pub print_code:bool,
+}
+
+impl Success{
+    pub fn is_print(&self)-> &bool{
+        return &self.print_code
+    }
+
+    pub fn success_str(&self) -> &String{
+        return &self.success_code
+    }
+
+}
+
+
+
+type CommandFn = fn() -> Result<Success,ProcessError>;
+
+fn clear() -> Result<Success,ProcessError>{
+    WRITER.lock().clear();
+    Ok(Success{success_code:"worked".to_string(),print_code:false})
+}
+
+fn pong() ->Result<Success,ProcessError>{
     crate::interrupts::LAUNCH_PONG.swap(true, core::sync::atomic::Ordering::Relaxed);
     let mut game = PongGame::new();
-    game.run();
+    let result = game.run();
     crate::interrupts::LAUNCH_PONG.swap(false, core::sync::atomic::Ordering::Relaxed);
+    result
 }
 
-fn history() {
+fn history() -> Result<Success,ProcessError> {
     let s = SHELL.lock();
     s.history();
+    Ok(Success{success_code:"worked".to_string(),print_code:false})
 }
 
 pub fn init_cmds() {
@@ -35,9 +69,13 @@ pub fn init_cmds() {
     c.insert(String::from("history"), history);
 }
 
-pub fn run_cmd(cmd: String) {
+pub fn run_cmd(cmd: String)->Result<Success,ProcessError> {
     match COMMANDS.lock().get(&cmd) {
-        None => println!("{} is not a command", cmd),
+        None =>{
+            let f =  format!("'{}' command not found",cmd);
+            Err(ProcessError{error_code: String::from(f)})
+        },  
+                                            
         Some(f) => f(),
     }
 }
