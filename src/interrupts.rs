@@ -92,6 +92,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
             match key_event.code {
                 KeyCode::W => crate::pong::W_PRESSED.store(is_pressed, Ordering::Relaxed),
                 KeyCode::S => crate::pong::S_PRESSED.store(is_pressed, Ordering::Relaxed),
+                KeyCode::O => crate::pong::UP_PRESSED.store(is_pressed,Ordering::Relaxed),
+                KeyCode::L => crate::pong::DOWN_PRESSED.store(is_pressed,Ordering::Relaxed),
                 _ => {}
             }
         }
