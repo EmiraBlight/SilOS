@@ -18,6 +18,7 @@ pub mod vga_buffer;
 extern crate alloc;
 pub mod hashmap;
 pub mod pong;
+pub mod programReturn;
 use core::panic::PanicInfo;
 
 pub fn hlt_loop() -> ! {

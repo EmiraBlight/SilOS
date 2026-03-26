@@ -2,9 +2,9 @@ use crate::canvas::TextCanvas;
 use crate::vga_buffer::{Color, ColorCode};
 
 use core::sync::atomic::{AtomicBool, Ordering};
-use crate::commands::ProcessError;
+use crate::programReturn::ProcessError;
 use crate::alloc::string::ToString;
-use crate::commands::Success;
+use crate::programReturn::Success;
 
 pub static W_PRESSED: AtomicBool = AtomicBool::new(false);
 pub static S_PRESSED: AtomicBool = AtomicBool::new(false);
