@@ -1,4 +1,4 @@
-use crate::println;
+use crate::{print, println};
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
@@ -8,7 +8,7 @@ use spin::Mutex;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shell {
     current_cmd: String,
-    past_cmd: Vec<String>,
+    past_cmd: Vec<Vec<String>>,
 }
 
 impl Shell {
@@ -20,10 +20,17 @@ impl Shell {
         self.current_cmd.pop();
     }
 
-    pub fn getcmd(&self) -> Option<String> {
+    pub fn getcmd(&self) -> Option<Vec<String>> {
         match self.current_cmd.as_str() {
             "" => None,
-            s => Some(s.to_string()),
+            s => {
+                let params_as_str: Vec<&str> = s.split("?").collect();
+
+                let params: Vec<String> =
+                    params_as_str.iter().map(|s| s.trim().to_string()).collect();
+
+                Some(params)
+            }
         }
     }
 
@@ -37,7 +44,10 @@ impl Shell {
 
     pub fn history(&self) {
         for i in self.past_cmd.clone() {
-            println!("{}", i);
+            for j in i {
+                print!("{} ", j);
+            }
+            println!();
         }
     }
 }
