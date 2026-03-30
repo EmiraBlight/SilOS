@@ -1,6 +1,6 @@
-use crate::programReturn::{ProcessError, Success};
-
+use crate::commands::{get_command_list, run_cmd};
 use crate::println;
+use crate::programReturn::{ProcessError, Success};
 use alloc::collections::BTreeMap;
 use alloc::fmt;
 use alloc::format;
@@ -87,6 +87,7 @@ enum RispExp {
     List(Vec<RispExp>),
     Func(fn(&[RispExp]) -> Result<RispExp, RispErr>),
     Lambda(RispLambda),
+    Syscall(Vec<String>),
 }
 
 #[derive(Clone)]
@@ -139,6 +140,34 @@ fn default_env() -> RispEnv<'static> {
             Ok(RispExp::Number(first - sum_of_rest))
         }),
     );
+
+    data.insert(
+        "sys".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            // Check if there is at least one argument (the command name)
+            if args.is_empty() {
+                return Err(RispErr::Reason(
+                    "sys expects at least one argument".to_string(),
+                ));
+            }
+
+            // Convert the RispExp arguments into Strings for the Syscall vector
+            let cmd_parts: Result<Vec<String>, RispErr> = args
+                .iter()
+                .map(|arg| match arg {
+                    RispExp::Symbol(s) => Ok(s.clone()),
+                    RispExp::Number(n) => Ok(n.to_string()),
+                    RispExp::Bool(b) => Ok(b.to_string()),
+                    _ => Err(RispErr::Reason(
+                        "sys arguments must be symbols, numbers, or bools".to_string(),
+                    )),
+                })
+                .collect();
+
+            Ok(RispExp::Syscall(cmd_parts?))
+        }),
+    );
+
     data.insert(
         "=".to_string(),
         RispExp::Func(ensure_tonicity!(|a, b| a == b)),
@@ -217,6 +246,7 @@ fn eval(exp: &RispExp, env: &mut RispEnv) -> Result<RispExp, RispErr> {
             }
         }
         RispExp::Func(_) => Err(RispErr::Reason("unexpected form".to_string())),
+        RispExp::Syscall(_) => Err(RispErr::Reason("unexpected form".to_string())),
     }
 }
 
@@ -353,6 +383,8 @@ impl fmt::Display for RispExp {
             RispExp::Func(_) => "Function {}".to_string(),
 
             RispExp::Lambda(_) => "Lambda {}".to_string(),
+
+            RispExp::Syscall(cmd) => format!("Syscall: [{}]", cmd.join(", ")),
         };
 
         write!(f, "{}", str)
@@ -374,43 +406,51 @@ pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
     }
 
     let env = &mut default_env();
+
+    let syscalls = get_command_list();
+    for call in syscalls {
+        env.data.insert(call.clone(), RispExp::Symbol(call));
+    }
+
     let mut worked = true;
     let mut error_msg = "".to_string();
     let binding = expr[1].to_string().clone();
     let mut statments: Vec<&str> = binding.split(";").collect();
     statments.pop();
 
-    if statments.len() == 0{
-      return Err(ProcessError { error_code: "statments must end with a semicolon".to_string() })
+    if statments.len() == 0 {
+        return Err(ProcessError {
+            error_code: "statments must end with a semicolon".to_string(),
+        });
     }
 
-
-    for code in statments{
-    
-
-    match parse_eval(code.to_string(), env) {
-        Ok(res) => {
-            println!("stdout: => {}", res);
+    for code in statments {
+        match parse_eval(code.to_string(), env) {
+            Ok(res) => match res {
+                RispExp::Syscall(call) => {
+                    run_cmd(call);
+                }
+                _ => {
+                    println!("stdout: => {}", res)
+                }
+            },
+            Err(e) => match e {
+                RispErr::Reason(msg) => {
+                    worked = false;
+                    error_msg = msg;
+                }
+            },
         }
-        Err(e) => match e {
-            RispErr::Reason(msg) => {
-            worked = false;
-            error_msg = msg;
-          }
-        },
     }
-  }
 
-  if worked{
-    Ok(Success {
-                success_code: "worked".to_string(),
-                print_code: false,
-            })
-  }
-
-  else{
-    Err(ProcessError { error_code: error_msg })
-  }
-
-
+    if worked {
+        Ok(Success {
+            success_code: "worked".to_string(),
+            print_code: false,
+        })
+    } else {
+        Err(ProcessError {
+            error_code: error_msg,
+        })
+    }
 }

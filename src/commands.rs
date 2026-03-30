@@ -66,7 +66,12 @@ pub fn init_cmds() {
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {
-    match COMMANDS.lock().get(&cmd[0]) {
+    let command_fn = {
+        let lock = COMMANDS.lock();
+        lock.get(&cmd[0]).cloned() // Clone the function pointer/handler
+    };
+
+    match command_fn {
         None => {
             let f = format!("'{}' command not found", cmd[0]);
             Err(ProcessError {
@@ -74,8 +79,17 @@ pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {
             })
         }
 
-        Some(f) => f(cmd),
+        Some(f) => {
+            unsafe { COMMANDS.force_unlock() };
+            return f(cmd);
+        }
     }
+}
+
+pub fn get_command_list() -> Vec<String> {
+    let lock = COMMANDS.lock();
+
+    lock.keys().cloned().collect()
 }
 
 lazy_static! {
