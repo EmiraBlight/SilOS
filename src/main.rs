@@ -5,6 +5,7 @@
 #![reexport_test_harness_main = "test_main"]
 #![allow(unconditional_panic)]
 
+use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use myOS::{hashmap::Hashable, println};
@@ -49,28 +50,24 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use myOS::hashmap::HashMap;
 
     let mut a: HashMap<key, u128> = HashMap::new();
-
     a.put(key { k: 12 }, 122);
     {
         let res = a.get(key { k: 12 });
         match res {
-           Some(res) => println!("Result was: {}",*res),
-           None => println!("No result to print"),
-       }
-    
+            Some(res) => println!("Result was: {}", *res),
+            None => println!("No result to print"),
+        }
     }
-
 
     a.remove(key { k: 12 }, 122);
 
     {
         let res = a.get(key { k: 12 });
 
-
-       match res {
-           Some(res) => println!("Result was: {}",*res),
-           None => println!("No result to print"),
-       }
+        match res {
+            Some(res) => println!("Result was: {}", *res),
+            None => println!("No result to print"),
+        }
 
         println!("Test: {:?}", res);
     }
@@ -89,19 +86,17 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
             };
 
             if let Some(cmd_str) = cmd_opt {
-                if !cmd_str.trim().is_empty() {
-                    let response = myOS::commands::run_cmd(cmd_str);
+                if !cmd_str[0].trim().is_empty() {
+                    let response = myOS::commands::run_cmd(cmd_str.clone());
 
-                    if let Err(ref error) = response{
+                    if let Err(ref error) = response {
                         println!("ERROR: {}", error.error_str())
                     }
-                    if let Ok(error) = response{
-                        if *error.is_print(){
-                            println!("Program succeded with code: {}",error.success_str());
+                    if let Ok(error) = response {
+                        if *error.is_print() {
+                            println!("Program succeded with code: {}", error.success_str());
                         }
                     }
-
-
                 }
             }
         } else {

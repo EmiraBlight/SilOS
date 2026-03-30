@@ -17,6 +17,7 @@ pub mod shell;
 pub mod vga_buffer;
 extern crate alloc;
 pub mod hashmap;
+pub mod parser;
 pub mod pong;
 pub mod programReturn;
 use core::panic::PanicInfo;
