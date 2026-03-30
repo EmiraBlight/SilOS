@@ -367,25 +367,45 @@ fn parse_eval(expr: String, env: &mut RispEnv) -> Result<RispExp, RispErr> {
 }
 
 pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
-    if expr.len() < 2 {
+    if expr.len() != 2 {
         return Err(ProcessError {
-            error_code: "Too few params".to_string(),
+            error_code: "expected two params".to_string(),
         });
     }
 
     let env = &mut default_env();
+    let mut worked = true;
+    let mut error_msg = "".to_string();
+    let binding = expr[1].to_string().clone();
+    let statments: Vec<&str> = binding.split(";").collect();
 
-    let expr = expr[1].to_string();
-    match parse_eval(expr, env) {
+
+    for code in statments{
+    
+
+    match parse_eval(code.to_string(), env) {
         Ok(res) => {
-            println!("Result: => {}", res);
-            Ok(Success {
+            println!("stdout: => {}", res);
+        }
+        Err(e) => match e {
+            RispErr::Reason(msg) => {
+            worked = false;
+            error_msg = msg;
+          }
+        },
+    }
+  }
+
+  if worked{
+    Ok(Success {
                 success_code: "worked".to_string(),
                 print_code: false,
             })
-        }
-        Err(e) => match e {
-            RispErr::Reason(msg) => Err(ProcessError { error_code: msg }),
-        },
-    }
+  }
+
+  else{
+    Err(ProcessError { error_code: error_msg })
+  }
+
+
 }
