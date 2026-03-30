@@ -377,7 +377,12 @@ pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
     let mut worked = true;
     let mut error_msg = "".to_string();
     let binding = expr[1].to_string().clone();
-    let statments: Vec<&str> = binding.split(";").collect();
+    let mut statments: Vec<&str> = binding.split(";").collect();
+    statments.pop();
+
+    if statments.len() == 0{
+      return Err(ProcessError { error_code: "statments must end with a semicolon".to_string() })
+    }
 
 
     for code in statments{
