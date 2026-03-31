@@ -5,7 +5,6 @@
 #![reexport_test_harness_main = "test_main"]
 #![allow(unconditional_panic)]
 
-use alloc::string::ToString;
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use myOS::{hashmap::Hashable, println};

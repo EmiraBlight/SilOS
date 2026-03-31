@@ -1,10 +1,13 @@
 use crate::alloc::string::ToString;
+use crate::alloc::sync::Arc;
+use crate::parser::interpret;
 use crate::pong::PongGame;
 use crate::println;
 use crate::programReturn::ProcessError;
 use crate::programReturn::Success;
 use crate::shell::SHELL;
 use crate::vga_buffer::WRITER;
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
@@ -20,6 +23,29 @@ fn clear(args: Vec<String>) -> Result<Success, ProcessError> {
     WRITER.lock().clear();
     Ok(Success {
         success_code: "worked".to_string(),
+        print_code: false,
+    })
+}
+
+fn bind(args: Vec<String>) -> Result<Success, ProcessError> {
+    if args.len() < 2 {
+        return Err(ProcessError {
+            error_code: "invalid number of args".to_string(),
+        });
+    }
+
+    let command_name = args[1].clone();
+
+    let mut bound_args = args.clone();
+    bound_args.remove(0);
+
+    let wrapper = move |_runtime_args: Vec<String>| interpret(bound_args.clone());
+
+    let mut c = COMMANDS.lock();
+    c.insert(command_name, Arc::new(wrapper));
+
+    Ok(Success {
+        success_code: "Worked".to_string(),
         print_code: false,
     })
 }
@@ -55,34 +81,35 @@ fn echo(args: Vec<String>) -> Result<Success, ProcessError> {
         print_code: false,
     })
 }
-use crate::parser::interpret;
+
 pub fn init_cmds() {
     let mut c = COMMANDS.lock();
-    c.insert(String::from("pong"), pong);
-    c.insert(String::from("clear"), clear);
-    c.insert(String::from("history"), history);
-    c.insert(String::from("echo"), echo);
-    c.insert(String::from("parse"), interpret);
+    c.insert(String::from("pong"), Arc::new(pong));
+    c.insert(String::from("clear"), Arc::new(clear));
+    c.insert(String::from("history"), Arc::new(history));
+    c.insert(String::from("echo"), Arc::new(echo));
+    c.insert(String::from("parse"), Arc::new(interpret));
+    c.insert(String::from("bind"), Arc::new(bind));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {
+    if cmd.is_empty() {
+        return Ok(Success {
+            success_code: "".to_string(),
+            print_code: false,
+        });
+    }
+
     let command_fn = {
         let lock = COMMANDS.lock();
-        lock.get(&cmd[0]).cloned() // Clone the function pointer/handler
+        lock.get(&cmd[0]).cloned()
     };
 
     match command_fn {
-        None => {
-            let f = format!("'{}' command not found", cmd[0]);
-            Err(ProcessError {
-                error_code: String::from(f),
-            })
-        }
-
-        Some(f) => {
-            unsafe { COMMANDS.force_unlock() };
-            return f(cmd);
-        }
+        Some(f) => f(cmd),
+        None => Err(ProcessError {
+            error_code: format!("'{}' command not found", cmd[0]),
+        }),
     }
 }
 
@@ -92,6 +119,7 @@ pub fn get_command_list() -> Vec<String> {
     lock.keys().cloned().collect()
 }
 
-lazy_static! {
-    pub static ref COMMANDS: Mutex<BTreeMap<String, CommandFn>> = Mutex::new(BTreeMap::new());
+lazy_static::lazy_static! {
+    static ref COMMANDS: Mutex<BTreeMap<String, Arc<dyn Fn(Vec<String>) -> Result<Success, ProcessError> + Send + Sync>>> =
+        Mutex::new(BTreeMap::new());
 }
