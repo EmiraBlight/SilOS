@@ -1,5 +1,4 @@
 use crate::commands::{get_command_list, run_cmd};
-use crate::println;
 use crate::programReturn::{ProcessError, Success};
 use alloc::collections::BTreeMap;
 use alloc::fmt;
@@ -18,7 +17,7 @@ information, then kernal can add a cmd:String, Fn()-> Result<Success,ProgramErro
 mapping. This will allow Risp programs to be entered and create custom commands on the kernal
 
 */
-
+#[derive(Clone)]
 #[derive(Debug)]
 enum RispErr {
     Reason(String),
@@ -151,7 +150,6 @@ fn default_env() -> RispEnv<'static> {
                 ));
             }
 
-            // Convert the RispExp arguments into Strings for the Syscall vector
             let cmd_parts: Result<Vec<String>, RispErr> = args
                 .iter()
                 .map(|arg| match arg {
@@ -163,7 +161,7 @@ fn default_env() -> RispEnv<'static> {
                     )),
                 })
                 .collect();
-
+              let _ = run_cmd(cmd_parts.clone().unwrap());
             Ok(RispExp::Syscall(cmd_parts?))
         }),
     );
