@@ -7,19 +7,17 @@ use crate::programReturn::ProcessError;
 use crate::programReturn::Success;
 use crate::shell::SHELL;
 use crate::vga_buffer::WRITER;
-use alloc::boxed::Box;
+
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::AtomicBool;
-use lazy_static::lazy_static;
+
 use spin::Mutex;
 pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
 
-type CommandFn = fn(Vec<String>) -> Result<Success, ProcessError>;
-
-fn clear(args: Vec<String>) -> Result<Success, ProcessError> {
+fn clear(_args: Vec<String>) -> Result<Success, ProcessError> {
     WRITER.lock().clear();
     Ok(Success {
         success_code: "worked".to_string(),
@@ -50,7 +48,7 @@ fn bind(args: Vec<String>) -> Result<Success, ProcessError> {
     })
 }
 
-fn pong(args: Vec<String>) -> Result<Success, ProcessError> {
+fn pong(_args: Vec<String>) -> Result<Success, ProcessError> {
     crate::interrupts::LAUNCH_PONG.swap(true, core::sync::atomic::Ordering::Relaxed);
     let mut game = PongGame::new();
     let result = game.run();
@@ -58,7 +56,7 @@ fn pong(args: Vec<String>) -> Result<Success, ProcessError> {
     result
 }
 
-fn history(args: Vec<String>) -> Result<Success, ProcessError> {
+fn history(_args: Vec<String>) -> Result<Success, ProcessError> {
     let s = SHELL.lock();
     s.history();
     Ok(Success {

@@ -428,11 +428,9 @@ pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
         match parse_eval(code.to_string(), env) {
             Ok(res) => match res {
                 RispExp::Syscall(call) => {
-                    run_cmd(call);
+                    let _ = run_cmd(call);
                 }
-                _ => {
-                    println!("stdout: => {}", res)
-                }
+                _ => (),
             },
             Err(e) => match e {
                 RispErr::Reason(msg) => {

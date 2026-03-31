@@ -1,10 +1,10 @@
 use crate::canvas::TextCanvas;
 use crate::vga_buffer::{Color, ColorCode};
 
-use core::sync::atomic::{AtomicBool, Ordering};
-use crate::programReturn::ProcessError;
 use crate::alloc::string::ToString;
+use crate::programReturn::ProcessError;
 use crate::programReturn::Success;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub static W_PRESSED: AtomicBool = AtomicBool::new(false);
 pub static S_PRESSED: AtomicBool = AtomicBool::new(false);
@@ -18,7 +18,7 @@ pub struct PongGame {
     dx: isize,
     dy: isize,
     paddle1_y: isize, // Track the left paddle
-    paddle2_y : isize,
+    paddle2_y: isize,
 }
 
 impl PongGame {
@@ -34,25 +34,27 @@ impl PongGame {
         }
     }
 
-    pub fn run(&mut self) ->Result<Success,ProcessError> {
-        while true {
+    pub fn run(&mut self) -> Result<Success, ProcessError> {
+        loop {
             self.update();
             self.wait();
 
             if self.ball_x < 1 {
                 self.canvas.clear();
-                return Ok(Success{success_code:"player 2 wins!".to_string(),print_code:true})
+                return Ok(Success {
+                    success_code: "player 2 wins!".to_string(),
+                    print_code: true,
+                });
             }
 
-
-            if self.ball_x > 79{
+            if self.ball_x > 79 {
                 self.canvas.clear();
-                return Ok(Success{success_code:"player 1 wins!".to_string(),print_code:true})
+                return Ok(Success {
+                    success_code: "player 1 wins!".to_string(),
+                    print_code: true,
+                });
             }
-
         }
-        Err(ProcessError{error_code:"pong failed somehow!".to_string()})
-
     }
     fn wait(&self) {
         for _ in 0..1_000_000 {
@@ -99,8 +101,6 @@ impl PongGame {
             }
         }
 
-
-
         for offset in 0..paddle_height {
             let current_y = self.paddle2_y + offset;
             if current_y >= 0 && current_y < 25 {
@@ -133,7 +133,6 @@ impl PongGame {
         {
             self.dx = -self.dx
         }
-
 
         if (76..80).contains(&self.ball_x)
             && (self.paddle2_y - 4..self.paddle2_y + 4).contains(&self.ball_y)
