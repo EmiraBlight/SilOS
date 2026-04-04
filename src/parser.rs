@@ -143,7 +143,6 @@ fn default_env() -> RispEnv<'static> {
     data.insert(
         "sys".to_string(),
         RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
-            // Check if there is at least one argument (the command name)
             if args.is_empty() {
                 return Err(RispErr::Reason(
                     "sys expects at least one argument".to_string(),
@@ -161,8 +160,8 @@ fn default_env() -> RispEnv<'static> {
                     )),
                 })
                 .collect();
-              let _ = run_cmd(cmd_parts.clone().unwrap());
-            Ok(RispExp::Syscall(cmd_parts?))
+              let _ = run_cmd(cmd_parts.clone().unwrap());//currently ignoring return
+            Ok(RispExp::Syscall(cmd_parts?))//change this to return the result of the run cmd function
         }),
     );
 
@@ -397,9 +396,9 @@ fn parse_eval(expr: String, env: &mut RispEnv) -> Result<RispExp, RispErr> {
 }
 
 pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
-    if expr.len() != 2 {
+    if expr.len() < 2 {
         return Err(ProcessError {
-            error_code: "expected two params".to_string(),
+            error_code: "expected at least two params".to_string(),
         });
     }
 
@@ -409,6 +408,36 @@ pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
     for call in syscalls {
         env.data.insert(call.clone(), RispExp::Symbol(call));
     }
+
+
+    for i in 0..2 {
+        env.data.insert(format!("n{}", i),(RispExp::Number(0.0)));
+        env.data.insert(format!("b{}", i),(RispExp::Bool(false)));
+    };
+
+
+    let mut b_count = 0;
+    let mut n_count = 0;
+
+
+    for arg_str in expr.iter().skip(2) {
+
+    if arg_str == "true" || arg_str == "false" {
+        let val = arg_str == "true";
+        let key = format!("b{}", b_count);
+        env.data.insert(key, RispExp::Bool(val));
+        b_count += 1;
+    } 
+
+    else if let Ok(val) = arg_str.parse::<f64>() {
+        let key = format!("n{}", n_count);
+        env.data.insert(key, RispExp::Number(val));
+        n_count += 1;
+    }
+}
+
+
+
 
     let mut worked = true;
     let mut error_msg = "".to_string();
@@ -425,9 +454,7 @@ pub fn interpret(expr: Vec<String>) -> Result<Success, ProcessError> {
     for code in statments {
         match parse_eval(code.to_string(), env) {
             Ok(res) => match res {
-                RispExp::Syscall(call) => {
-                    let _ = run_cmd(call);
-                }
+                
                 _ => (),
             },
             Err(e) => match e {

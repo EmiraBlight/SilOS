@@ -12,6 +12,7 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::vec;
 use core::sync::atomic::AtomicBool;
 
 use spin::Mutex;
@@ -33,17 +34,29 @@ fn bind(args: Vec<String>) -> Result<Success, ProcessError> {
     }
 
     let command_name = args[1].clone();
+    
+    let lisp_code = args[2].clone();
 
-    let mut bound_args = args.clone();
-    bound_args.remove(0);
 
-    let wrapper = move |_runtime_args: Vec<String>| interpret(bound_args.clone());
+    let wrapper = move |runtime_args: Vec<String>| {
+
+        let mut exec_expr = vec![String::from("exec"), lisp_code.clone()];
+        
+
+        if runtime_args.len() > 1 {
+            for arg in &runtime_args[1..] {
+                exec_expr.push(arg.clone());
+            }
+        }
+
+        interpret(exec_expr)
+    };
 
     let mut c = COMMANDS.lock();
     c.insert(command_name, Arc::new(wrapper));
 
     Ok(Success {
-        success_code: "Worked".to_string(),
+        success_code: "Bound successfully".to_string(),
         print_code: false,
     })
 }
