@@ -29,6 +29,8 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard,
+    AtaPrimary = PIC_1_OFFSET + 14,
+    AtaSecondary = PIC_1_OFFSET + 15,
 }
 
 impl InterruptIndex {
@@ -38,6 +40,13 @@ impl InterruptIndex {
 
     fn as_usize(self) -> usize {
         usize::from(self.as_u8())
+    }
+}
+
+extern "x86-interrupt" fn ata_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    unsafe {
+        PICS.lock()
+            .notify_end_of_interrupt(InterruptIndex::AtaPrimary.as_u8());
     }
 }
 
@@ -92,8 +101,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
             match key_event.code {
                 KeyCode::W => crate::pong::W_PRESSED.store(is_pressed, Ordering::Relaxed),
                 KeyCode::S => crate::pong::S_PRESSED.store(is_pressed, Ordering::Relaxed),
-                KeyCode::O => crate::pong::UP_PRESSED.store(is_pressed,Ordering::Relaxed),
-                KeyCode::L => crate::pong::DOWN_PRESSED.store(is_pressed,Ordering::Relaxed),
+                KeyCode::O => crate::pong::UP_PRESSED.store(is_pressed, Ordering::Relaxed),
+                KeyCode::L => crate::pong::DOWN_PRESSED.store(is_pressed, Ordering::Relaxed),
                 _ => {}
             }
         }
@@ -129,6 +138,7 @@ lazy_static! {
         }
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+        idt[InterruptIndex::AtaPrimary.as_usize()].set_handler_fn(ata_interrupt_handler);
         idt.page_fault.set_handler_fn(page_fault_handler);
         idt
     };

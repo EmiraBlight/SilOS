@@ -30,9 +30,15 @@ test = true
 bench = false
 
 [package.metadata.bootimage]
+
+run-args = [
+    "-drive", "format=raw,file=/home/sammy/SilOS/storage.bin,if=ide,index=1,media=disk"
+]
+
+
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "stdio",
-    "-display", "none"
+    "-display", "none", "-d int"
 ]
 test-success-exit-code = 33
 test-timeout = 300

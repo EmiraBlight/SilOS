@@ -22,7 +22,7 @@ lazy_static! {
 }
 
 lazy_static! {
-    static ref GDT: (GlobalDescriptorTable, Selectors) = {
+    pub static ref GDT: (GlobalDescriptorTable, Selectors) = {
         let mut gdt = GlobalDescriptorTable::new();
         let code_selector = gdt.add_entry(Descriptor::kernel_code_segment());
         let tss_selector = gdt.add_entry(Descriptor::tss_segment(&TSS));
@@ -47,7 +47,7 @@ pub fn init() {
     }
 }
 
-struct Selectors {
-    code_selector: SegmentSelector,
-    tss_selector: SegmentSelector,
+pub struct Selectors {
+    pub code_selector: SegmentSelector,
+    pub tss_selector: SegmentSelector,
 }

@@ -17,6 +17,7 @@ pub mod shell;
 pub mod vga_buffer;
 extern crate alloc;
 pub mod hashmap;
+pub mod ide;
 pub mod parser;
 pub mod pong;
 pub mod programReturn;

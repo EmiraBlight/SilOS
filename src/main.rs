@@ -7,23 +7,7 @@
 
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
-use myOS::{hashmap::Hashable, println};
-
-struct key {
-    k: u128,
-}
-
-impl Hashable for key {
-    fn hash(&self) -> usize {
-        self.k as usize
-    }
-}
-
-impl PartialEq for key {
-    fn eq(&self, other: &key) -> bool {
-        self.k == other.k
-    }
-}
+use myOS::{print, println};
 
 entry_point!(kernel_main);
 
@@ -46,30 +30,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     myOS::commands::init_cmds();
 
-    use myOS::hashmap::HashMap;
-
-    let mut a: HashMap<key, u128> = HashMap::new();
-    a.put(key { k: 12 }, 122);
-    {
-        let res = a.get(key { k: 12 });
-        match res {
-            Some(res) => println!("Result was: {}", *res),
-            None => println!("No result to print"),
-        }
-    }
-
-    a.remove(key { k: 12 }, 122);
-
-    {
-        let res = a.get(key { k: 12 });
-
-        match res {
-            Some(res) => println!("Result was: {}", *res),
-            None => println!("No result to print"),
-        }
-
-        println!("Test: {:?}", res);
-    }
+    print!("user: ");
 
     loop {
         x86_64::instructions::interrupts::disable();
