@@ -54,10 +54,6 @@ impl AtaDrive {
         unsafe {
             self.device.write(0xA0);
 
-            for _ in 0..4 {
-                let _ = self.status.read();
-            }
-
             self.command.write(0xEC);
 
             let status = self.status.read();

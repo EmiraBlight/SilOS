@@ -17,6 +17,38 @@ use alloc::vec::Vec;
 use core::sync::atomic::AtomicBool;
 use spin::Mutex;
 pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
+use core::str;
+
+fn read_as_string(args: Vec<String>) -> Result<Success, ProcessError> {
+    if (args.len() != 2) {
+        return Err(ProcessError {
+            error_code: "Needs 2 parameters".to_string(),
+        });
+    }
+    let mut loc: u32 = 0;
+    let mut nan = false;
+    match args[1].parse::<u32>() {
+        Ok(n) => loc = n,
+        Err(_) => {
+            nan = true;
+        }
+    };
+
+    if nan {
+        return Err(ProcessError {
+            error_code: "needs a number".to_string(),
+        });
+    } else {
+        let buffer = IDE.lock().read_sector(loc);
+        let s: &str = core::str::from_utf8(&buffer).unwrap().trim_matches('\0');
+        println!("{}", s);
+
+        Ok(Success {
+            success_code: "Worked".to_string(),
+            print_code: false,
+        })
+    }
+}
 
 fn read(args: Vec<String>) -> Result<Success, ProcessError> {
     if (args.len() != 2) {
@@ -160,6 +192,7 @@ pub fn init_cmds() {
     c.insert(String::from("bind"), Arc::new(bind));
     c.insert(String::from("read"), Arc::new(read));
     c.insert(String::from("write"), Arc::new(write));
+    c.insert(String::from("show"), Arc::new(read_as_string));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {
