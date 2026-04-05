@@ -19,6 +19,176 @@ use spin::Mutex;
 pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
 use core::str;
 
+use crate::fat16::FS;
+use core::cmp::min;
+
+
+fn run_file(args: Vec<String>) -> Result<Success, ProcessError> {
+    if args.len() < 3 {
+        return Err(ProcessError {
+            error_code: "Usage: run <NAME> <EXT> [args...]".to_string(),
+        });
+    }
+
+    let mut filename = [b' '; 8];
+    let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+    let name_len = min(8, name_bytes.len());
+    filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+    let mut ext = [b' '; 3];
+    let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+    let ext_len = min(3, ext_bytes.len());
+    ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+
+    let lisp_code = {
+        let fs_lock = FS.lock();
+        if let Some(fs) = fs_lock.as_ref() {
+            match fs.find_file(&filename, &ext) {
+                Some(entry) => {
+                    let file_data = fs.read_file(&entry);
+                    match core::str::from_utf8(&file_data) {
+                        Ok(text) => text.trim_matches('\0').to_string(),
+                        Err(_) => {
+                            return Err(ProcessError {
+                                error_code: "Script contains invalid text formatting".to_string(),
+                            });
+                        }
+                    }
+                }
+                None => {
+                    return Err(ProcessError {
+                        error_code: format!("Script {}.{} not found", args[1], args[2]),
+                    });
+                }
+            }
+        } else {
+            return Err(ProcessError {
+                error_code: "File system not mounted!".to_string(),
+            });
+        }
+    };
+
+    let mut exec_expr = vec![String::from("exec"), lisp_code];
+
+    if args.len() > 3 {
+        for arg in &args[3..] {
+            exec_expr.push(arg.clone());
+        }
+    }
+
+    interpret(exec_expr)
+}
+
+fn cat_file(args: Vec<String>) -> Result<Success, ProcessError> {
+    if args.len() < 3 {
+        return Err(ProcessError {
+            error_code: "Usage: cat <NAME> <EXT>".to_string(),
+        });
+    }
+
+    let mut filename = [b' '; 8];
+    let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+    let name_len = min(8, name_bytes.len());
+    filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+    let mut ext = [b' '; 3];
+    let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+    let ext_len = min(3, ext_bytes.len());
+    ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+
+    let fs_lock = FS.lock();
+    if let Some(fs) = fs_lock.as_ref() {
+        match fs.find_file(&filename, &ext) {
+            Some(entry) => {
+                let file_data = fs.read_file(&entry);
+
+                match core::str::from_utf8(&file_data) {
+                    Ok(text) => {
+                        println!("--- {} ---", args[1]);
+                        println!("{}", text);
+                        println!("------------");
+
+                        Ok(Success {
+                            success_code: "File read successfully".to_string(),
+                            print_code: false,
+                        })
+                    }
+                    Err(_) => Err(ProcessError {
+                        error_code: "File contains invalid UTF-8 (might be a binary file)"
+                            .to_string(),
+                    }),
+                }
+            }
+            None => Err(ProcessError {
+                error_code: format!("File {}.{} not found", args[1], args[2]),
+            }),
+        }
+    } else {
+        Err(ProcessError {
+            error_code: "File system not mounted!".to_string(),
+        })
+    }
+}
+
+fn make_file(args: Vec<String>) -> Result<Success, ProcessError> {
+    if args.len() < 4 {
+        return Err(ProcessError {
+            error_code: "Usage: mkfile <NAME> <EXT> <data to write>".to_string(),
+        });
+    }
+
+    let mut filename = [b' '; 8];
+    let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+    let name_len = min(8, name_bytes.len());
+    filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+    let mut ext = [b' '; 3];
+    let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+    let ext_len = min(3, ext_bytes.len());
+    ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+
+    let data_string = args[3..].join(" ");
+    let data_bytes = data_string.as_bytes();
+
+    let fs_lock = FS.lock();
+    if let Some(fs) = fs_lock.as_ref() {
+        match fs.write_new_file(filename, ext, data_bytes) {
+            Ok(_) => Ok(Success {
+                success_code: format!(
+                    "Created {}.{} ({} bytes)",
+                    args[1],
+                    args[2],
+                    data_bytes.len()
+                ),
+                print_code: true,
+            }),
+            Err(e) => Err(ProcessError {
+                error_code: format!("FS Error: {}", e),
+            }),
+        }
+    } else {
+        Err(ProcessError {
+            error_code: "File system not mounted! Did you run fs::init()?".to_string(),
+        })
+    }
+}
+
+fn format_disk(args: Vec<String>) -> Result<Success, ProcessError> {
+    match crate::fat16::Fat16FileSystem::format_drive() {
+        Ok(_) => {
+            return Ok(Success {
+                success_code: "format worked!".to_string(),
+                print_code: true,
+            });
+        }
+        Err(e) => {
+            return Err(ProcessError {
+                error_code: "failed to format!".to_string(),
+            });
+        }
+    }
+}
+
 fn read_as_string(args: Vec<String>) -> Result<Success, ProcessError> {
     if (args.len() != 2) {
         return Err(ProcessError {
@@ -193,6 +363,10 @@ pub fn init_cmds() {
     c.insert(String::from("read"), Arc::new(read));
     c.insert(String::from("write"), Arc::new(write));
     c.insert(String::from("show"), Arc::new(read_as_string));
+    c.insert(String::from("formatd"), Arc::new(format_disk));
+    c.insert(String::from("mkdir"), Arc::new(make_file));
+    c.insert(String::from("cat"), Arc::new(cat_file));
+    c.insert(String::from("run"), Arc::new(run_file));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {

@@ -9,6 +9,7 @@
 pub mod allocator;
 pub mod canvas;
 pub mod commands;
+pub mod fat16;
 pub mod gdt;
 pub mod interrupts;
 pub mod memory;

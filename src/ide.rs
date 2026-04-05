@@ -8,7 +8,7 @@ pub struct AtaDrive {
     lba_mid: Port<u8>,
     lba_high: Port<u8>,
     device: Port<u8>,
-    command: Port<u8>,
+    pub command: Port<u8>,
     status: Port<u8>,
 }
 

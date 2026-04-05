@@ -15,6 +15,8 @@ extern crate alloc;
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use myOS::allocator;
+    use myOS::fat16;
+    use myOS::fat16::FS;
     use myOS::memory::{self, BootInfoFrameAllocator};
     use x86_64::VirtAddr;
 
@@ -28,7 +30,19 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     // Setup Heap
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap initialization failed");
 
+    fat16::init();
+
     myOS::commands::init_cmds();
+    let arr: [u8; 3] = [12, 12, 15];
+    {
+        let res = FS
+            .lock()
+            .as_ref()
+            .unwrap()
+            .write_new_file(*b"test    ", *b"txt", &arr);
+
+        println!("{:?}", res);
+    }
 
     print!("user: ");
 
