@@ -295,7 +295,6 @@ impl Fat16FileSystem {
             }
         }
 
-        // 4. Clear the Root Directory
         let root_dir_start = fat_start_lba + (fat_count as u32 * sectors_per_fat as u32);
         let root_dir_sectors = ((root_entries * 32) + 511) / 512;
         let empty_sector = [0u8; 512];
@@ -309,6 +308,128 @@ impl Fat16FileSystem {
         }
         println!("Formatted drive!");
         Ok(())
+    }
+
+    pub fn find_file_location(
+        &self,
+        filename: &[u8; 8],
+        ext: &[u8; 3],
+    ) -> Option<(u32, usize, DirectoryEntry)> {
+        let root_dir_start = self.bpb.reserved_sectors as u32
+            + (self.bpb.fat_count as u32 * self.bpb.sectors_per_fat as u32);
+        let root_dir_sectors = ((self.bpb.root_entries * 32) + 511) / 512;
+
+        let mut drive = crate::ide::IDE.lock();
+
+        for sector_offset in 0..root_dir_sectors as u32 {
+            let lba = root_dir_start + sector_offset;
+            let buffer = drive.read_sector(lba);
+
+            for i in 0..16 {
+                let offset = i * 32;
+                let first_byte = buffer[offset];
+
+                if first_byte == 0x00 {
+                    return None;
+                }
+                if first_byte == 0xE5 {
+                    continue;
+                }
+
+                let is_match = &buffer[offset..offset + 8] == filename
+                    && &buffer[offset + 8..offset + 11] == ext;
+
+                if is_match {
+                    let entry: DirectoryEntry = unsafe {
+                        core::ptr::read(buffer[offset..].as_ptr() as *const DirectoryEntry)
+                    };
+                    return Some((lba, offset, entry));
+                }
+            }
+        }
+        None
+    }
+
+    pub fn overwrite_file(
+        &self,
+        filename: [u8; 8],
+        ext: [u8; 3],
+        new_data: &[u8],
+    ) -> Result<(), &'static str> {
+        let (dir_lba, dir_offset, mut entry) = self
+            .find_file_location(&filename, &ext)
+            .ok_or("File not found")?;
+
+        if entry.cluster_low >= 2 {
+            self.free_cluster_chain(entry.cluster_low);
+        }
+
+        let bytes_per_cluster = self.bpb.sectors_per_cluster as usize * 512;
+        let mut bytes_written = 0;
+        let mut previous_cluster: Option<u16> = None;
+        let mut first_cluster: u16 = 0;
+
+        while bytes_written < new_data.len() || new_data.is_empty() {
+            let current_cluster = self.find_free_cluster().ok_or("Disk full")?;
+
+            self.set_fat_entry(current_cluster, 0xFFFF);
+
+            if previous_cluster.is_none() {
+                first_cluster = current_cluster;
+            } else {
+                self.set_fat_entry(previous_cluster.unwrap(), current_cluster);
+            }
+
+            let cluster_lba = self.cluster_to_lba(current_cluster);
+            let chunk_size = core::cmp::min(new_data.len() - bytes_written, bytes_per_cluster);
+            let chunk = &new_data[bytes_written..bytes_written + chunk_size];
+
+            let mut drive = crate::ide::IDE.lock();
+            for sector_idx in 0..self.bpb.sectors_per_cluster as u32 {
+                let sector_start = sector_idx as usize * 512;
+                if sector_start >= chunk.len() {
+                    break;
+                }
+
+                let mut buffer = [0u8; 512];
+                let copy_len = core::cmp::min(512, chunk.len() - sector_start);
+                buffer[..copy_len].copy_from_slice(&chunk[sector_start..sector_start + copy_len]);
+
+                drive.write_sector_bytes(cluster_lba + sector_idx, &buffer);
+            }
+
+            bytes_written += chunk_size;
+            previous_cluster = Some(current_cluster);
+
+            if new_data.is_empty() {
+                break;
+            }
+        }
+
+        entry.cluster_low = first_cluster;
+        entry.file_size = new_data.len() as u32;
+
+        let mut drive = crate::ide::IDE.lock();
+        let mut dir_buffer = drive.read_sector(dir_lba);
+
+        unsafe {
+            let dest_ptr = dir_buffer[dir_offset..].as_mut_ptr() as *mut DirectoryEntry;
+            core::ptr::write(dest_ptr, entry);
+        }
+
+        drive.write_sector_bytes(dir_lba, &dir_buffer);
+
+        Ok(())
+    }
+
+    fn free_cluster_chain(&self, start_cluster: u16) {
+        let mut current = start_cluster;
+
+        while current >= 2 && current < 0xFFF8 {
+            let next_cluster = self.get_fat_entry(current);
+            self.set_fat_entry(current, 0x0000); // Mark as free
+            current = next_cluster;
+        }
     }
 
     pub fn find_file(&self, filename: &[u8; 8], ext: &[u8; 3]) -> Option<DirectoryEntry> {

@@ -22,7 +22,6 @@ use core::str;
 use crate::fat16::FS;
 use core::cmp::min;
 
-
 fn run_file(args: Vec<String>) -> Result<Success, ProcessError> {
     if args.len() < 3 {
         return Err(ProcessError {
@@ -352,6 +351,42 @@ fn echo(args: Vec<String>) -> Result<Success, ProcessError> {
     })
 }
 
+fn edit(args: Vec<String>) -> Result<Success, ProcessError> {
+    if args.len() != 4 {
+        return Err(ProcessError {
+            error_code: "Usage: edit <name> <ext> <data>".to_string(),
+        });
+    }
+
+    let mut filename = [b' '; 8];
+    let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+    let name_len = min(8, name_bytes.len());
+    filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
+
+    let mut ext = [b' '; 3];
+    let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+    let ext_len = min(3, ext_bytes.len());
+    ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+
+    let fs = FS.lock();
+
+    if let Some(a) = fs.as_ref() {
+        match a.overwrite_file(filename, ext, args[3].as_bytes()) {
+            Ok(_) => Ok(Success {
+                success_code: "Worked".to_string(),
+                print_code: false,
+            }),
+            Err(e) => Err(ProcessError {
+                error_code: e.to_string(),
+            }),
+        }
+    } else {
+        Err(ProcessError {
+            error_code: "File system not mounted!".to_string(),
+        })
+    }
+}
+
 pub fn init_cmds() {
     let mut c = COMMANDS.lock();
     c.insert(String::from("pong"), Arc::new(pong));
@@ -367,6 +402,7 @@ pub fn init_cmds() {
     c.insert(String::from("mkdir"), Arc::new(make_file));
     c.insert(String::from("cat"), Arc::new(cat_file));
     c.insert(String::from("run"), Arc::new(run_file));
+    c.insert(String::from("edit"), Arc::new(edit));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<Success, ProcessError> {
