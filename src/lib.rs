@@ -21,6 +21,8 @@ pub mod hashmap;
 pub mod ide;
 pub mod parser;
 pub mod pong;
+pub mod task;
+
 pub mod programReturn;
 use core::panic::PanicInfo;
 
