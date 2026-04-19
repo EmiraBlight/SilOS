@@ -3,6 +3,7 @@ use crate::hlt_loop;
 use crate::print;
 use crate::println;
 use crate::shell::SHELL;
+use crate::task::keyboard::add_processed_char;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin;
@@ -51,64 +52,17 @@ extern "x86-interrupt" fn ata_interrupt_handler(_stack_frame: InterruptStackFram
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
     use x86_64::instructions::port::Port;
 
-    lazy_static! {
-        static ref KEYBOARD: spin::Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
-            spin::Mutex::new(Keyboard::new(
-                ScancodeSet1::new(),
-                layouts::Us104Key,
-                HandleControl::Ignore
-            ));
-    }
-
-    let mut keyboard = KEYBOARD.lock();
+    // 1. Capture the raw input
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
+
+    // 2. Pass to the lock-free queue (defined in keyboard.rs)
+    // This function must only perform lock-free operations.
     crate::task::keyboard::add_scancode(scancode);
 
-    if scancode == 0x0E {
-        crate::vga_buffer::_backspace();
-        *&SHELL.lock().backspace();
-    } else if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event) {
-            match key {
-                DecodedKey::Unicode(character) => {
-                    if character != '\t'
-                        && character != '\n'
-                        && !crate::interrupts::LAUNCH_PONG
-                            .load(core::sync::atomic::Ordering::Relaxed)
-                    {
-                        print!("{}", character);
-                        *&SHELL.lock().add(character as u8);
-                    } else if character == '\n' {
-                        print!("\n");
-
-                        crate::commands::COMMAND_PENDING
-                            .store(true, core::sync::atomic::Ordering::Release);
-                    }
-                }
-
-                DecodedKey::RawKey(_) => {}
-            }
-        }
-
-        if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-            use pc_keyboard::KeyCode;
-
-            let is_pressed = key_event.state == pc_keyboard::KeyState::Down;
-
-            match key_event.code {
-                KeyCode::W => crate::pong::W_PRESSED.store(is_pressed, Ordering::Relaxed),
-                KeyCode::S => crate::pong::S_PRESSED.store(is_pressed, Ordering::Relaxed),
-                KeyCode::O => crate::pong::UP_PRESSED.store(is_pressed, Ordering::Relaxed),
-                KeyCode::L => crate::pong::DOWN_PRESSED.store(is_pressed, Ordering::Relaxed),
-                _ => {}
-            }
-        }
-    }
-
+    // 3. Signal EOI (End Of Interrupt)
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());

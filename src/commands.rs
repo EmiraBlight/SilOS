@@ -16,11 +16,40 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::AtomicBool;
 use spin::Mutex;
+use crate::task::executor::yield_now;
 pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
 use core::str;
 
 use crate::fat16::FS;
 use core::cmp::min;
+
+
+pub async fn shell_task() {
+    loop {
+        // Check for command signal
+        if crate::commands::COMMAND_PENDING.swap(false, core::sync::atomic::Ordering::Acquire) {
+            let cmd_opt = {
+                let mut shell = crate::shell::SHELL.lock();
+                let cmd = shell.getcmd().clone();
+                shell.clear();
+                cmd
+            };
+
+            if let Some(cmd_str) = cmd_opt {
+                if !cmd_str[0].trim().is_empty() {
+                    // Process logic
+                    let response = crate::commands::run_cmd(cmd_str.clone());
+                    // Handle errors/success...
+                }
+            }
+        }
+        // Yield control back to the executor, allowing
+        // the keyboard/print task to run
+        yield_now();
+    }
+}
+
+
 
 fn run_file(args: Vec<String>) -> Result<Success, ProcessError> {
     if args.len() < 3 {

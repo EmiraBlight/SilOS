@@ -5,6 +5,28 @@ use crossbeam_queue::ArrayQueue;
 use core::task::{Context, Poll};
 use alloc::task::Wake;
 
+use core::future::Future;
+use core::pin::Pin;
+
+pub fn yield_now() -> YieldNow {
+    YieldNow { yielded: false }
+}
+
+pub struct YieldNow { yielded: bool }
+
+impl Future for YieldNow {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<()> {
+        if self.yielded {
+            Poll::Ready(())
+        } else {
+            self.yielded = true;
+            cx.waker().wake_by_ref(); // Wake the task to be processed again later
+            Poll::Pending
+        }
+    }
+}
+
 struct TaskWaker {
     task_id: TaskId,
     task_queue: Arc<ArrayQueue<TaskId>>,
