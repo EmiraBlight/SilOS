@@ -1,15 +1,12 @@
+use crate::alloc::string::ToString;
 use crate::canvas::TextCanvas;
+use crate::programReturn::{ProcessError, Success};
 use crate::vga_buffer::{Color, ColorCode};
 
-use crate::alloc::string::ToString;
-use crate::programReturn::ProcessError;
-use crate::programReturn::Success;
-use core::sync::atomic::{AtomicBool, Ordering};
-
-pub static W_PRESSED: AtomicBool = AtomicBool::new(false);
-pub static S_PRESSED: AtomicBool = AtomicBool::new(false);
-pub static UP_PRESSED: AtomicBool = AtomicBool::new(false);
-pub static DOWN_PRESSED: AtomicBool = AtomicBool::new(false);
+// You'll need to import your input queue and the pc_keyboard types
+use crate::input::pop_key;
+use crate::task::executor::yield_now;
+use pc_keyboard::{KeyCode, KeyState};
 
 pub struct PongGame {
     canvas: TextCanvas,
@@ -17,8 +14,13 @@ pub struct PongGame {
     ball_y: isize,
     dx: isize,
     dy: isize,
-    paddle1_y: isize, // Track the left paddle
+    paddle1_y: isize,
     paddle2_y: isize,
+    // Store key states internally instead of using global atomics
+    w_pressed: bool,
+    s_pressed: bool,
+    up_pressed: bool,
+    down_pressed: bool,
 }
 
 impl PongGame {
@@ -31,14 +33,49 @@ impl PongGame {
             dy: 1,
             paddle1_y: 10,
             paddle2_y: 10,
+            w_pressed: false,
+            s_pressed: false,
+            up_pressed: false,
+            down_pressed: false,
         }
     }
 
-    pub fn run(&mut self) -> Result<Success, ProcessError> {
+    pub async fn run(&mut self) -> Result<Success, ProcessError> {
         loop {
+            while let Some(key_event) = pop_key() {
+                match (key_event.code, key_event.state) {
+                    (KeyCode::W, KeyState::Down) => self.w_pressed = true,
+                    (KeyCode::W, KeyState::Up) => self.w_pressed = false,
+
+                    (KeyCode::S, KeyState::Down) => self.s_pressed = true,
+                    (KeyCode::S, KeyState::Up) => self.s_pressed = false,
+
+                    // Assuming O and L for player 2 based on your previous setup
+                    (KeyCode::O, KeyState::Down) => self.up_pressed = true,
+                    (KeyCode::O, KeyState::Up) => self.up_pressed = false,
+
+                    (KeyCode::L, KeyState::Down) => self.down_pressed = true,
+                    (KeyCode::L, KeyState::Up) => self.down_pressed = false,
+
+                    // Give the user a way to exit gracefully!
+                    (KeyCode::Escape, KeyState::Down) => {
+                        self.canvas.clear();
+                        return Ok(Success {
+                            success_code: "Game Exited".to_string(),
+                            print_code: true,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+
             self.update();
+
+            yield_now().await;
+
             self.wait();
 
+            // 5. Check win conditions
             if self.ball_x < 1 {
                 self.canvas.clear();
                 return Ok(Success {
@@ -56,6 +93,7 @@ impl PongGame {
             }
         }
     }
+
     fn wait(&self) {
         for _ in 0..1_000_000 {
             unsafe {
@@ -67,20 +105,21 @@ impl PongGame {
     pub fn update(&mut self) {
         let paddle_height = 5;
 
-        if W_PRESSED.load(Ordering::Relaxed) {
+        // Use internal state variables instead of Atomics
+        if self.w_pressed {
             self.paddle1_y = self.paddle1_y.saturating_sub(1);
         }
-        if S_PRESSED.load(Ordering::Relaxed) {
+        if self.s_pressed {
             if self.paddle1_y < 24 - paddle_height {
                 self.paddle1_y += 1;
             }
         }
 
-        if UP_PRESSED.load(Ordering::Relaxed) {
+        if self.up_pressed {
             self.paddle2_y = self.paddle2_y.saturating_sub(1);
         }
 
-        if DOWN_PRESSED.load(Ordering::Relaxed) {
+        if self.down_pressed {
             if self.paddle2_y < 24 - paddle_height {
                 self.paddle2_y += 1;
             }
