@@ -88,6 +88,7 @@ enum RispExp {
 struct RispLambda {
     params_exp: Arc<RispExp>,
     body_exp: Arc<RispExp>,
+    captured_env: RispEnv,
 }
 
 macro_rules! ensure_tonicity {
@@ -171,8 +172,6 @@ fn parse_single_float(exp: &RispExp) -> Result<f64, RispErr> {
 fn env_get(k: &str, env: &RispEnv) -> Option<RispExp> {
     env.data.get(k).cloned()
 }
-
-// 3. OWNERSHIP! eval now takes ownership of `exp`, removing E0597.
 fn eval(
     exp: RispExp,
     env: &mut RispEnv,
@@ -243,7 +242,7 @@ fn eval(
                             return Ok(arg_forms[0].clone());
                         }
                         "fn" => {
-                            return eval_lambda_args(&arg_forms);
+                            return eval_lambda_args(&arg_forms, env.clone());
                         }
                         "sys" => {
                             if arg_forms.is_empty() {
@@ -314,8 +313,20 @@ fn eval(
                         for arg in arg_forms {
                             evaluated_args.push(eval(arg, &mut *env).await?);
                         }
-                        let mut new_env =
-                            env_for_lambda(lambda.params_exp.clone(), &evaluated_args, &mut *env)?;
+
+                        let mut merged_env = env.clone();
+
+                        for (k, v) in lambda.captured_env.data.iter() {
+                            merged_env.data.insert(k.clone(), v.clone());
+                        }
+
+                        let mut new_env = env_for_lambda(
+                            lambda.params_exp.clone(),
+                            &evaluated_args,
+                            &mut merged_env,
+                        )?;
+
+                        // Evaluate the body
                         eval((*lambda.body_exp).clone(), &mut new_env).await
                     }
                     _ => Err(RispErr::Reason("first form must be a function".to_string())),
@@ -368,7 +379,7 @@ fn parse_list_of_symbol_strings(form: Arc<RispExp>) -> Result<Vec<String>, RispE
         .collect()
 }
 
-fn eval_lambda_args(arg_forms: &[RispExp]) -> Result<RispExp, RispErr> {
+fn eval_lambda_args(arg_forms: &[RispExp], captured_env: RispEnv) -> Result<RispExp, RispErr> {
     let params_exp = arg_forms
         .first()
         .ok_or(RispErr::Reason("expected args form".to_string()))?;
@@ -384,6 +395,7 @@ fn eval_lambda_args(arg_forms: &[RispExp]) -> Result<RispExp, RispErr> {
     Ok(RispExp::Lambda(RispLambda {
         body_exp: Arc::new(body_exp.clone()),
         params_exp: Arc::new(params_exp.clone()),
+        captured_env,
     }))
 }
 
