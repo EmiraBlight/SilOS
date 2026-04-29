@@ -1,4 +1,4 @@
-# Lisp Dialect Reference Manual - Part 1
+# Lisp Dialect Reference Manual
 
 This document outlines the syntax, data types, and core features of the kernel's Lisp dialect. The language is designed for execution within a custom operating system environment, providing direct interaction with system calls and memory mutation.
 
@@ -12,7 +12,7 @@ This document outlines the syntax, data types, and core features of the kernel's
 
 
 ## 2. Data Types
-* **Numbers:** Parsed as 64-bit floating-point numbers (`f64`). For bitwise operations and map keys, they are internally cast to 64-bit signed integers (`i64`).
+* **Numbers:** Parsed as 64-bit floating-point numbers (`f64`). For bitwise operations and map keys, they are internally cast to 64-bit signed integers (`i64`). For future versions this will be implemented as a i64
 * **Booleans:** Standard `true` and `false` values.
 * **Strings:** Text enclosed in double quotes, e.g., `"hello"`.
 * **Lists:** Dynamically sized arrays containing any valid language type.
@@ -39,6 +39,7 @@ Variables can be strictly scoped to a specific block using the `let` keyword.
 When a script is executed via the shell, command-line arguments are automatically injected into the global environment.
 * **Numbers:** Accessed via `n0`, `n1`, `n2`, etc. (Default: `0`)
 * **Booleans:** Accessed via `b0`, `b1`, `b2`, etc. (Default: `false`)
+* In the future this will be done via args, which will be a global list variable with the arguments
 
 ## 4. Operators
 
