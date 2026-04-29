@@ -99,7 +99,7 @@ Groups multiple expressions to be evaluated sequentially. It returns the result 
 Iterates as long as the provided condition evaluates to `true`.
 ```lisp
 (def a 5);
-(while (> a 0)
+(for (> a 0)
     (do
         (sys echo a)
         (def a (- a 1))
