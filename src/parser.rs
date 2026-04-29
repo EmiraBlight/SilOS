@@ -240,6 +240,10 @@ fn default_env() -> RispEnv {
         RispExp::Func(ensure_tonicity!(|a, b| a == b)),
     );
     data.insert(
+        "!=".to_string(),
+        RispExp::Func(ensure_tonicity!(|a, b| a != b)),
+    );
+    data.insert(
         ">".to_string(),
         RispExp::Func(ensure_tonicity!(|a, b| a > b)),
     );
