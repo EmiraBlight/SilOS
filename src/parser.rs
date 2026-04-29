@@ -25,11 +25,70 @@ struct RispEnv {
 }
 
 fn tokenize(expr: String) -> Vec<String> {
-    expr.replace("(", " ( ")
-        .replace(")", " ) ")
-        .split_whitespace()
-        .map(|x| x.to_string())
-        .collect()
+    let mut tokens = Vec::new();
+    let mut current_token = String::new();
+
+    let mut in_string = false;
+    let mut in_comment = false;
+
+    for c in expr.chars() {
+        if in_comment {
+            if c == '#' {
+                in_comment = false;
+            }
+            continue;
+        }
+
+        if in_string {
+            current_token.push(c);
+            if c == '"' {
+                in_string = false; // Exit string mode
+                tokens.push(current_token.clone());
+                current_token.clear();
+            }
+            continue;
+        }
+
+        match c {
+            '#' => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                in_comment = true;
+            }
+            '"' => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                in_string = true;
+                current_token.push(c);
+            }
+            '(' | ')' => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+                tokens.push(c.to_string());
+            }
+            _ if c.is_whitespace() => {
+                if !current_token.is_empty() {
+                    tokens.push(current_token.clone());
+                    current_token.clear();
+                }
+            }
+            _ => {
+                current_token.push(c);
+            }
+        }
+    }
+
+    if !current_token.is_empty() {
+        tokens.push(current_token);
+    }
+
+    tokens
 }
 
 fn parse<'a>(tokens: &'a [String]) -> Result<(RispExp, &'a [String]), RispErr> {
@@ -60,14 +119,18 @@ fn read_seq<'a>(tokens: &'a [String]) -> Result<(RispExp, &'a [String]), RispErr
 }
 
 fn parse_atom(token: &str) -> RispExp {
-    match token.as_ref() {
+    match token {
         "true" => RispExp::Bool(true),
         "false" => RispExp::Bool(false),
+        _ if token.starts_with('"') && token.ends_with('"') => {
+            let string_val = token[1..token.len() - 1].to_string();
+            RispExp::String(string_val)
+        }
         _ => {
             let potential_float: Result<f64, ParseFloatError> = token.parse();
             match potential_float {
                 Ok(v) => RispExp::Number(v),
-                Err(_) => RispExp::Symbol(token.to_string().clone()),
+                Err(_) => RispExp::Symbol(token.to_string()),
             }
         }
     }
@@ -78,7 +141,9 @@ enum RispExp {
     Bool(bool),
     Symbol(String),
     Number(f64),
+    String(String),
     List(Vec<RispExp>),
+    Map(BTreeMap<RispKey, RispExp>),
     Func(fn(&[RispExp]) -> Result<RispExp, RispErr>),
     Lambda(RispLambda),
     Syscall(Vec<String>),
@@ -89,6 +154,42 @@ struct RispLambda {
     params_exp: Arc<RispExp>,
     body_exp: Arc<RispExp>,
     captured_env: RispEnv,
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum RispKey {
+    String(String),
+    Number(i64), // Safe for ordering!
+    Bool(bool),
+}
+
+impl fmt::Display for RispKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RispKey::String(s) => write!(f, "\"{}\"", s), // Keep quotes for map printing
+            RispKey::Number(n) => write!(f, "{}", n),
+            RispKey::Bool(b) => write!(f, "{}", b),
+        }
+    }
+}
+
+fn exp_to_key(exp: &RispExp) -> Result<RispKey, RispErr> {
+    match exp {
+        RispExp::String(s) => Ok(RispKey::String(s.clone())),
+        RispExp::Number(n) => Ok(RispKey::Number(*n as i64)), // Cast float to 64-bit int
+        RispExp::Bool(b) => Ok(RispKey::Bool(*b)),
+        _ => Err(RispErr::Reason(
+            "only strings, numbers, and bools can be map keys".to_string(),
+        )),
+    }
+}
+
+fn key_to_exp(key: &RispKey) -> RispExp {
+    match key {
+        RispKey::String(s) => RispExp::String(s.clone()),
+        RispKey::Number(n) => RispExp::Number(*n as f64), // Cast back to float
+        RispKey::Bool(b) => RispExp::Bool(*b),
+    }
 }
 
 macro_rules! ensure_tonicity {
@@ -139,6 +240,10 @@ fn default_env() -> RispEnv {
         RispExp::Func(ensure_tonicity!(|a, b| a == b)),
     );
     data.insert(
+        "!=".to_string(),
+        RispExp::Func(ensure_tonicity!(|a, b| a != b)),
+    );
+    data.insert(
         ">".to_string(),
         RispExp::Func(ensure_tonicity!(|a, b| a > b)),
     );
@@ -153,6 +258,146 @@ fn default_env() -> RispEnv {
     data.insert(
         "<=".to_string(),
         RispExp::Func(ensure_tonicity!(|a, b| a <= b)),
+    );
+
+    data.insert(
+        "*".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            let prod = parse_list_of_floats(args)?
+                .iter()
+                .fold(1.0, |prod, a| prod * a);
+            Ok(RispExp::Number(prod))
+        }),
+    );
+
+    data.insert(
+        "/".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            let floats = parse_list_of_floats(args)?;
+            let first = *floats
+                .first()
+                .ok_or(RispErr::Reason("expected at least one number".to_string()))?;
+            let result = floats[1..].iter().fold(first, |div, a| (div / a));
+            Ok(RispExp::Number(result))
+        }),
+    );
+
+    data.insert(
+        "&".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            let floats = parse_list_of_floats(args)?;
+            let first = *floats
+                .first()
+                .ok_or(RispErr::Reason("expected at least one number".to_string()))?
+                as i64;
+            let result = floats[1..].iter().fold(first, |acc, a| acc & (*a as i64));
+            Ok(RispExp::Number(result as f64))
+        }),
+    );
+
+    data.insert(
+        "list".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            Ok(RispExp::List(args.to_vec()))
+        }),
+    );
+
+    data.insert("[]".to_string(), RispExp::List(vec![]));
+
+    data.insert(
+        "len".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            let arg = args
+                .first()
+                .ok_or(RispErr::Reason("len requires 1 argument".to_string()))?;
+            match arg {
+                RispExp::List(l) => Ok(RispExp::Number(l.len() as f64)),
+                RispExp::String(s) => Ok(RispExp::Number(s.len() as f64)),
+                _ => Err(RispErr::Reason(
+                    "len only works on lists and strings".to_string(),
+                )),
+            }
+        }),
+    );
+
+    data.insert(
+        "!!".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            if args.len() != 2 {
+                return Err(RispErr::Reason(
+                    "!! requires exactly 2 arguments".to_string(),
+                ));
+            }
+
+            let collection = &args[0];
+            let index_exp = &args[1];
+
+            match collection {
+                RispExp::List(l) => {
+                    let idx_f = parse_single_float(index_exp)?;
+                    let mut idx = idx_f as i64;
+
+                    // Handle negative indexing
+                    if idx < 0 {
+                        idx = (l.len() as i64) + idx;
+                    }
+
+                    if idx >= 0 && (idx as usize) < l.len() {
+                        Ok(l[idx as usize].clone())
+                    } else {
+                        Err(RispErr::Reason("index out of bounds".to_string()))
+                    }
+                }
+                RispExp::Map(m) => {
+                    let key = exp_to_key(index_exp)?;
+
+                    match m.get(&key) {
+                        Some(val) => Ok(val.clone()),
+                        None => Ok(RispExp::String("".to_string())),
+                    }
+                }
+                _ => Err(RispErr::Reason(
+                    "!! only works on lists, strings, and maps".to_string(),
+                )),
+            }
+        }),
+    );
+
+    data.insert(
+        "map".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            if args.len() % 2 != 0 {
+                return Err(RispErr::Reason(
+                    "map requires an even number of arguments".to_string(),
+                ));
+            }
+
+            let mut m = alloc::collections::BTreeMap::new();
+            let mut i = 0;
+            while i < args.len() {
+                let key = exp_to_key(&args[i])?; // Use the helper!
+                m.insert(key, args[i + 1].clone());
+                i += 2;
+            }
+            Ok(RispExp::Map(m))
+        }),
+    );
+
+    data.insert(
+        "mkeys".to_string(),
+        RispExp::Func(|args: &[RispExp]| -> Result<RispExp, RispErr> {
+            let arg = args
+                .first()
+                .ok_or(RispErr::Reason("mkeys requires 1 argument".to_string()))?;
+            match arg {
+                RispExp::Map(m) => {
+                    // Convert RispKeys back to RispExps for the resulting List
+                    let keys: Vec<RispExp> = m.keys().map(|k| key_to_exp(k)).collect();
+                    Ok(RispExp::List(keys))
+                }
+                _ => Err(RispErr::Reason("mkeys only works on maps".to_string())),
+            }
+        }),
     );
 
     RispEnv { data }
@@ -262,9 +507,10 @@ fn eval(
                                     RispExp::Symbol(s) => Ok(s),
                                     RispExp::Number(n) => Ok(n.to_string()),
                                     RispExp::Bool(b) => Ok(b.to_string()),
+                                    RispExp::String(s) => Ok(s),
+                                    RispExp::List(_) | RispExp::Map(_) => Ok(arg.to_string()),
                                     _ => Err(RispErr::Reason(
-                                        "sys args must evaluate to symbols, numbers, or bools"
-                                            .to_string(),
+                                        "sys args must evaluate to symbols, numbers, bools, strings, lists, or maps".to_string(),
                                     )),
                                 })
                                 .collect();
@@ -294,7 +540,299 @@ fn eval(
                                 }
                             }
                         }
-                        _ => {} // Fall through
+
+                        "quote" => {
+                            let form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected form to quote".to_string()))?;
+                            return Ok(form.clone());
+                        }
+                        "and" => {
+                            for arg in arg_forms {
+                                let res = eval(arg, &mut *env).await?;
+                                match res {
+                                    RispExp::Bool(b) => {
+                                        if !b {
+                                            return Ok(RispExp::Bool(false));
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(RispErr::Reason(
+                                            "and expects booleans".to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                            return Ok(RispExp::Bool(true));
+                        }
+                        "or" => {
+                            for arg in arg_forms {
+                                let res = eval(arg, &mut *env).await?;
+                                match res {
+                                    RispExp::Bool(b) => {
+                                        if b {
+                                            return Ok(RispExp::Bool(true));
+                                        }
+                                    }
+                                    _ => {
+                                        return Err(RispErr::Reason(
+                                            "or expects booleans".to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                            return Ok(RispExp::Bool(false));
+                        }
+                        "for" => {
+                            let condition = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected loop condition".to_string()))?;
+                            let body = arg_forms
+                                .get(1)
+                                .ok_or(RispErr::Reason("expected loop body".to_string()))?;
+
+                            loop {
+                                let cond_res = eval(condition.clone(), &mut *env).await?;
+                                match cond_res {
+                                    RispExp::Bool(b) if b => {
+                                        eval(body.clone(), &mut *env).await?;
+                                    }
+                                    RispExp::Bool(_) => break,
+                                    _ => {
+                                        return Err(RispErr::Reason(
+                                            "loop condition must be boolean".to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                            return Ok(RispExp::Bool(false));
+                        }
+
+                        "append" => {
+                            let sym_form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected symbol for append".to_string()))?;
+                            let val_form = arg_forms
+                                .get(1)
+                                .ok_or(RispErr::Reason("expected value to append".to_string()))?;
+
+                            let sym_name = match sym_form {
+                                RispExp::Symbol(s) => s.clone(),
+                                _ => {
+                                    return Err(RispErr::Reason(
+                                        "append requires a variable name (symbol)".to_string(),
+                                    ));
+                                }
+                            };
+
+                            let evaled_val = eval(val_form.clone(), &mut *env).await?;
+
+                            let mut current_list = match env_get(&sym_name, env) {
+                                Some(RispExp::List(l)) => l,
+                                Some(_) => {
+                                    return Err(RispErr::Reason(format!(
+                                        "'{}' is not a list",
+                                        sym_name
+                                    )));
+                                }
+                                None => {
+                                    return Err(RispErr::Reason(format!(
+                                        "undefined variable '{}'",
+                                        sym_name
+                                    )));
+                                }
+                            };
+
+                            current_list.push(evaled_val.clone());
+                            env.data
+                                .insert(sym_name.to_string(), RispExp::List(current_list.clone()));
+
+                            return Ok(RispExp::List(current_list));
+                        }
+
+                        "pop" => {
+                            let sym_form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected symbol for pop".to_string()))?;
+
+                            let sym_name = match sym_form {
+                                RispExp::Symbol(s) => s.clone(),
+                                _ => {
+                                    return Err(RispErr::Reason(
+                                        "pop requires a variable name (symbol)".to_string(),
+                                    ));
+                                }
+                            };
+
+                            let mut current_list = match env_get(&sym_name, env) {
+                                Some(RispExp::List(l)) => l,
+                                Some(_) => {
+                                    return Err(RispErr::Reason(format!(
+                                        "'{}' is not a list",
+                                        sym_name
+                                    )));
+                                }
+                                None => {
+                                    return Err(RispErr::Reason(format!(
+                                        "undefined variable '{}'",
+                                        sym_name
+                                    )));
+                                }
+                            };
+
+                            let popped_val = current_list.pop().ok_or(RispErr::Reason(
+                                "cannot pop from an empty list".to_string(),
+                            ))?;
+
+                            env.data
+                                .insert(sym_name.to_string(), RispExp::List(current_list));
+
+                            return Ok(popped_val);
+                        }
+
+                        "mset" => {
+                            let sym_form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected symbol for mset".to_string()))?;
+                            let key_form = arg_forms
+                                .get(1)
+                                .ok_or(RispErr::Reason("expected key for mset".to_string()))?;
+                            let val_form = arg_forms
+                                .get(2)
+                                .ok_or(RispErr::Reason("expected value for mset".to_string()))?;
+
+                            let sym_name = match sym_form {
+                                RispExp::Symbol(s) => s.clone(),
+                                _ => {
+                                    return Err(RispErr::Reason(
+                                        "mset requires a variable name (symbol)".to_string(),
+                                    ));
+                                }
+                            };
+
+                            let evaled_key = eval(key_form.clone(), &mut *env).await?;
+                            let key = exp_to_key(&evaled_key)?;
+
+                            let evaled_val = eval(val_form.clone(), &mut *env).await?;
+
+                            let mut current_map = match env_get(&sym_name, env) {
+                                Some(RispExp::Map(m)) => m,
+                                Some(_) => {
+                                    return Err(RispErr::Reason(format!(
+                                        "'{}' is not a map",
+                                        sym_name
+                                    )));
+                                }
+                                None => {
+                                    return Err(RispErr::Reason(format!(
+                                        "undefined variable '{}'",
+                                        sym_name
+                                    )));
+                                }
+                            };
+
+                            current_map.insert(key, evaled_val.clone());
+                            env.data.insert(sym_name, RispExp::Map(current_map));
+
+                            return Ok(evaled_val);
+                        }
+
+                        "mdel" => {
+                            let sym_form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("expected symbol for mdel".to_string()))?;
+                            let key_form = arg_forms
+                                .get(1)
+                                .ok_or(RispErr::Reason("expected key for mdel".to_string()))?;
+
+                            let sym_name = match sym_form {
+                                RispExp::Symbol(s) => s.clone(),
+                                _ => {
+                                    return Err(RispErr::Reason(
+                                        "mdel requires a variable name (symbol)".to_string(),
+                                    ));
+                                }
+                            };
+
+                            let evaled_key = eval(key_form.clone(), &mut *env).await?;
+                            let key = exp_to_key(&evaled_key)?;
+
+                            let mut current_map = match env_get(&sym_name, env) {
+                                Some(RispExp::Map(m)) => m,
+                                Some(_) => {
+                                    return Err(RispErr::Reason(format!(
+                                        "'{}' is not a map",
+                                        sym_name
+                                    )));
+                                }
+                                None => {
+                                    return Err(RispErr::Reason(format!(
+                                        "undefined variable '{}'",
+                                        sym_name
+                                    )));
+                                }
+                            };
+
+                            current_map.remove(&key);
+                            env.data.insert(sym_name, RispExp::Map(current_map));
+
+                            return Ok(RispExp::Bool(true));
+                        }
+
+                        "do" => {
+                            if arg_forms.is_empty() {
+                                return Ok(RispExp::List(vec![]));
+                            }
+
+                            let mut last_result = RispExp::List(vec![]);
+
+                            for form in arg_forms {
+                                last_result = eval(form, &mut *env).await?;
+                            }
+
+                            return Ok(last_result);
+                        }
+
+                        "error" => {
+                            let msg_form = arg_forms
+                                .get(0)
+                                .ok_or(RispErr::Reason("error requires a message".to_string()))?;
+
+                            let evaled_msg = eval(msg_form.clone(), &mut *env).await?;
+
+                            if let Some(handler) = env_get("error", env) {
+                                match handler {
+                                    RispExp::Lambda(lambda) => {
+                                        let mut merged_env = env.clone();
+                                        for (k, v) in lambda.captured_env.data.iter() {
+                                            merged_env.data.insert(k.clone(), v.clone());
+                                        }
+
+                                        if let Ok(mut new_env) = env_for_lambda(
+                                            lambda.params_exp.clone(),
+                                            &[evaled_msg.clone()],
+                                            &mut merged_env,
+                                        ) {
+                                            let _ = eval((*lambda.body_exp).clone(), &mut new_env)
+                                                .await;
+                                        }
+                                    }
+                                    RispExp::Func(f) => {
+                                        let _ = f(&[evaled_msg.clone()]);
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            let err_str = match evaled_msg {
+                                RispExp::String(s) => s,
+                                _ => evaled_msg.to_string(),
+                            };
+
+                            return Err(RispErr::Reason(err_str));
+                        }
+
+                        _ => {}
                     }
                 }
 
@@ -335,12 +873,12 @@ fn eval(
             RispExp::Func(_) | RispExp::Lambda(_) | RispExp::Syscall(_) => {
                 Err(RispErr::Reason("unexpected form".to_string()))
             }
+            RispExp::String(_) => Ok(exp), // <- Added string base case
+            RispExp::Map(_) => Ok(exp),
         }
     })
 }
 
-// 4. CLONE THE ENVIRONMENT!
-// Instead of lifetime links, we clone the dictionary. Safe and zero-headache.
 fn env_for_lambda(
     params: Arc<RispExp>,
     evaluated_args: &[RispExp],
@@ -405,13 +943,18 @@ impl fmt::Display for RispExp {
             RispExp::Bool(a) => a.to_string(),
             RispExp::Symbol(s) => (*s).clone(),
             RispExp::Number(n) => n.to_string(),
+            RispExp::String(s) => s.clone(), // Print the raw string without quotes for sys echo
             RispExp::List(list) => {
                 let xs: Vec<String> = list.iter().map(|x| x.to_string()).collect();
-                format!("({})", xs.join(","))
+                format!("({})", xs.join(" ")) // Space-separated Lisp style: (1 2 3)
             }
-            RispExp::Func(_) => "Function {}".to_string(),
-            RispExp::Lambda(_) => "Lambda {}".to_string(),
-            RispExp::Syscall(cmd) => format!("Syscall: [{}]", cmd.join(", ")),
+            RispExp::Map(map) => {
+                let xs: Vec<String> = map.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
+                format!("{{{}}}", xs.join(", "))
+            }
+            RispExp::Func(_) => "<Function>".to_string(),
+            RispExp::Lambda(_) => "<Lambda>".to_string(),
+            RispExp::Syscall(cmd) => format!("<Syscall: [{}]>", cmd.join(", ")),
         };
         write!(f, "{}", str)
     }
@@ -463,6 +1006,9 @@ pub fn interpret(expr: Vec<String>) -> CommandFuture {
         let mut error_msg = "".to_string();
         let binding = expr[1].to_string().clone();
         let mut statments: Vec<&str> = binding.split(";").collect();
+
+        let _ = parse_eval("(def error (fn (s) (sys echo s)))".to_string(), &mut env).await;
+
         statments.pop();
 
         if statments.is_empty() {
