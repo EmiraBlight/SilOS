@@ -8,7 +8,7 @@
 use bootloader::{BootInfo, entry_point};
 use core::panic::PanicInfo;
 use myOS::{print, println};
-use myOS::task::{Task, simple_executor::SimpleExecutor};
+use myOS::task::{Task};
 use myOS::task::keyboard;
 use myOS::task::executor::Executor;
 entry_point!(kernel_main);

@@ -2,7 +2,6 @@ use core::{future::Future, pin::Pin};
 use alloc::boxed::Box;
 use core::task::{Context, Poll};
 
-pub mod simple_executor;
 pub mod keyboard;
 pub mod executor;
 
