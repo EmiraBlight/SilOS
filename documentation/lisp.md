@@ -2,14 +2,14 @@
 
 This document outlines the syntax, data types, and core features of the kernel's Lisp dialect. The language is designed for execution within a custom operating system environment, providing direct interaction with system calls and memory mutation.
 
----
+
 
 ## 1. Syntax Overview
 * **Statements:** All top-level statements must end with a semicolon `;`.
 * **Comments:** Comments are enclosed within pound signs `# ... #`.
 * **Quoting:** Prevent evaluation of a list using the quote operator `'(...)` or the explicit `(quote (...))` form.
 
----
+
 
 ## 2. Data Types
 * **Numbers:** Parsed as 64-bit floating-point numbers (`f64`). For bitwise operations and map keys, they are internally cast to 64-bit signed integers (`i64`).
@@ -18,7 +18,6 @@ This document outlines the syntax, data types, and core features of the kernel's
 * **Lists:** Dynamically sized arrays containing any valid language type.
 * **Maps:** Key-value data structures. Keys are restricted to Strings, Numbers, and Booleans to ensure safe ordering in memory.
 
----
 
 ## 3. Variables and Scoping
 
@@ -72,7 +71,7 @@ Logical operators support short-circuit evaluation.
 | `or` | Logical OR | `(or (= 1 2) (= 2 2))` |
 | `not` | Logical NOT | `(not (= 1 2))` |
 
----
+
 
 ## 5. Control Flow
 
@@ -107,7 +106,7 @@ Iterates as long as the provided condition evaluates to `true`.
 );
 ```
 
----
+
 
 ## 6. Functions
 Functions are defined using the `fn` keyword and bound to a variable via `def`. They support closures and capture their surrounding environment.
@@ -182,7 +181,7 @@ The universal indexer `!!` works on Strings, Lists, and Maps. Note that there mu
     (mkeys g);
     ```
 
----
+
 
 ## 8. System Integration
 
