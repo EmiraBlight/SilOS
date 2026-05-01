@@ -2,6 +2,7 @@ use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+use x86_64::instructions::port::Port;
 
 #[macro_export]
 macro_rules! print {
@@ -54,7 +55,7 @@ impl fmt::Write for Writer {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct ColorCode(u8);
+pub struct ColorCode(pub u8);
 impl ColorCode {
     pub fn new(foreground: Color, background: Color) -> ColorCode {
         ColorCode((background as u8) << 4 | (foreground as u8))
@@ -68,17 +69,17 @@ pub struct ScreenChar {
     pub color_code: ColorCode,
 }
 
-const BUFFER_HEIGHT: usize = 25;
-const BUFFER_WIDTH: usize = 80;
+pub const BUFFER_HEIGHT: usize = 25;
+pub const BUFFER_WIDTH: usize = 80;
 
 #[repr(transparent)]
 struct Buffer {
-    chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    pub chars: [[Volatile<ScreenChar>; BUFFER_WIDTH]; BUFFER_HEIGHT],
 }
 pub struct Writer {
     column_position: usize,
     color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    pub buffer: &'static mut Buffer,
 }
 
 impl Writer {
@@ -206,4 +207,43 @@ fn test_println_output() {
             assert_eq!(char::from(screen_char.ascii_character), c);
         }
     });
+}
+
+
+///for text editor interface
+pub fn write_char_at(x: usize, y: usize, c: u8, color_code: u8) {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        let mut writer = WRITER.lock();
+        // Ensure we don't write out of bounds
+        if x < BUFFER_WIDTH && y < BUFFER_HEIGHT {
+            writer.buffer.chars[y][x].write(ScreenChar {
+                ascii_character: c,
+                color_code: ColorCode(color_code),
+            });
+        }
+    });
+}
+
+/// Clears the entire VGA text buffer.
+pub fn clear_screen() {
+    use x86_64::instructions::interrupts;
+    interrupts::without_interrupts(|| {
+        WRITER.lock().clear();
+    });
+}
+
+/// Updates the blinking hardware cursor position via VGA ports.
+pub fn update_cursor(x: usize, y: usize) {
+    let pos = y * BUFFER_WIDTH + x;
+
+    let mut index_port: Port<u8> = Port::new(0x3D4);
+    let mut data_port: Port<u8> = Port::new(0x3D5);
+
+    unsafe {
+        index_port.write(0x0F);
+        data_port.write((pos & 0xFF) as u8);
+        index_port.write(0x0E);
+        data_port.write(((pos >> 8) & 0xFF) as u8);
+    }
 }
