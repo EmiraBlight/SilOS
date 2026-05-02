@@ -4,28 +4,29 @@ use crate::task::executor::yield_now;
 use x86_64::instructions::port::Port;
 use crate::vga_buffer::WRITER;
 use crate::vga_buffer::ScreenChar;
-use crate::fat16::FS;
+use crate::fat16::{FS};
 use crate::vga_buffer;
 use crate::vga_buffer::BUFFER_WIDTH;
 use crate::vga_buffer::BUFFER_HEIGHT;
 use alloc::vec::Vec;
 
+
 pub async fn run_editor(args: Vec<String>) {
+    let name_arg = args.get(1).map(|s| s.as_str()).unwrap_or("UNNAMED");
+    let ext_arg = args.get(2).map(|s| s.as_str()).unwrap_or("TXT");
 
-    let filename = "test.exe";
-
-    let (fat_name, fat_ext) = parse_filename_to_fat16(filename);
+    let (fat_name, fat_ext) = format_fat16_name(name_arg, ext_arg);
 
     let initial_data = if let Some(fs) = FS.lock().as_ref() {
-            if let Some(entry) = fs.find_file(&fat_name, &fat_ext) {
-                let file_bytes = fs.read_file(&entry);
-                alloc::string::String::from_utf8_lossy(&file_bytes).into_owned()
-            } else {
-                alloc::string::String::new()
-            }
+        if let Some(entry) = fs.find_file(&fat_name, &fat_ext) {
+            let file_bytes = fs.read_file(&entry);
+            alloc::string::String::from_utf8_lossy(&file_bytes).into_owned()
         } else {
             alloc::string::String::new()
-        };
+        }
+    } else {
+        alloc::string::String::new()
+    };
 
 
     let mut editor = Editor::new(&initial_data);
@@ -49,6 +50,22 @@ pub async fn run_editor(args: Vec<String>) {
                     DecodedKey::Unicode(character) => {
                         if character == '\u{1b}' {
                             crate::vga_buffer::clear_screen();
+
+                            if let Some(fs) = FS.lock().as_ref() {
+                                let file_contents = editor.lines.join("\n");
+                                let bytes_to_write = file_contents.as_bytes();
+
+                                if let Some(_entry) = fs.find_file(&fat_name, &fat_ext) {
+
+                                    let _ = fs.overwrite_file(fat_name, fat_ext, bytes_to_write);
+
+                                } else {
+
+                                    let _ = fs.write_new_file(fat_name, fat_ext, bytes_to_write);
+
+                                }
+                            }
+
                             return;
                         } else if character == '\u{8}' {
                             editor.backspace();
@@ -81,19 +98,15 @@ pub async fn run_editor(args: Vec<String>) {
 }
 
 
-pub fn parse_filename_to_fat16(filename: &str) -> ([u8; 8], [u8; 3]) {
-    let mut name = [0x20u8; 8];
-    let mut ext = [0x20u8; 3];
+pub fn format_fat16_name(name_str: &str, ext_str: &str) -> ([u8; 8], [u8; 3]) {
+    let mut name = [0x20u8; 8]; // Pre-fill with spaces
+    let mut ext = [0x20u8; 3];  // Pre-fill with spaces
 
-    let mut parts = filename.splitn(2, '.');
-    let name_part = parts.next().unwrap_or("");
-    let ext_part = parts.next().unwrap_or("");
-
-    for (i, byte) in name_part.bytes().take(8).enumerate() {
+    for (i, byte) in name_str.bytes().take(8).enumerate() {
         name[i] = byte.to_ascii_uppercase();
     }
 
-    for (i, byte) in ext_part.bytes().take(3).enumerate() {
+    for (i, byte) in ext_str.bytes().take(3).enumerate() {
         ext[i] = byte.to_ascii_uppercase();
     }
 
