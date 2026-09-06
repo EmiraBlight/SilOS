@@ -21,11 +21,11 @@ pub static COMMAND_PENDING: AtomicBool = AtomicBool::new(false);
 use core::future::Future;
 use core::pin::Pin;
 use core::str;
-
 use crate::fat16::FS;
 use core::cmp::min;
 pub type CommandFuture = Pin<Box<dyn Future<Output = Result<Success, ProcessError>> + Send>>;
 use pc_keyboard::{DecodedKey, HandleControl, Keyboard, ScancodeSet1, layouts};
+use crate::editor::run_editor;
 
 pub async fn shell_task() {
     let mut keyboard = Keyboard::new(
@@ -88,6 +88,21 @@ pub async fn shell_task() {
         yield_now().await;
     }
 }
+
+
+fn run_edit(args: Vec<String>) ->CommandFuture{
+    return Box::pin(async move {
+        run_editor(args).await;
+
+        Ok(Success {
+            success_code: "Worked".to_string(),
+            print_code: false,
+        })
+
+    });
+
+}
+
 
 fn run_file(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
@@ -497,6 +512,7 @@ pub fn init_cmds() {
     c.insert(String::from("cat"), Arc::new(cat_file));
     c.insert(String::from("run"), Arc::new(run_file));
     c.insert(String::from("edit"), Arc::new(edit));
+    c.insert(String::from("eden"), Arc::new(run_edit));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<CommandFuture, ProcessError> {

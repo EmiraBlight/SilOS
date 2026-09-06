@@ -24,6 +24,7 @@ pub mod parser;
 pub mod pong;
 pub mod programReturn;
 pub mod task;
+pub mod editor;
 use core::panic::PanicInfo;
 
 pub fn hlt_loop() -> ! {
