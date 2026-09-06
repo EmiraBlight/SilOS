@@ -109,6 +109,14 @@ impl AtaDrive {
             while (self.status.read() & 0x80) != 0 {}
         }
     }
+
+    pub fn flush_cache(&mut self) {
+        unsafe {
+            self.command.write(0xE7);
+
+            while (self.status.read() & 0x80) != 0 {}
+        }
+    }
 }
 lazy_static::lazy_static! {
     pub static ref IDE: Mutex<AtaDrive> =

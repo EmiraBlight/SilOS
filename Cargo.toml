@@ -32,13 +32,14 @@ bench = false
 [package.metadata.bootimage]
 
 run-args = [
-    "-drive", "format=raw,file=/home/sammy/SilOS/storage.bin,if=ide,index=1,media=disk"
+    "-drive", "format=raw,file=/home/sammy/SilOS/storage.bin,if=ide,index=1,media=disk",
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"
 ]
 
 
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "stdio",
-    "-display", "none", "-d int"
+    "-display", "none", "-d", "int"
 ]
 test-success-exit-code = 33
 test-timeout = 300
@@ -55,9 +56,6 @@ harness = false
 
 [lints.rust]
 nonstandard_style = "allow"
-
-[attribute.bootimage]
-test-args = ["-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-serial", "stdio", "-display", "none"]
 
 [dependencies.crossbeam-queue]
 version = "0.3.11"
