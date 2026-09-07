@@ -59,17 +59,28 @@ current session.
 
 ## 5. Argument separator
 
-**SilOS splits a command line on `?`, not on whitespace.** Each `?`-separated field is trimmed and
-becomes one argument. This is the single most surprising thing about the shell:
+**SilOS splits a command line on whitespace**, like a normal shell (`Shell::getcmd` uses
+`split_whitespace()`, so repeated or leading/trailing spaces don't produce empty arguments):
 
 ```
-> echo?hello world          # one argument: "hello world"
-> mkdir?notes?txt?my text   # four arguments
-> cat?notes?txt
+> echo hello world          # args: ["echo", "hello", "world"]
+> mkdir notes txt my text   # args: ["mkdir", "notes", "txt", "my", "text"]
+> cat notes txt
 ```
 
-Spaces inside a field are preserved, which is how multi-word file contents and whole Lisp programs
-get passed as a single argument.
+There is no quoting. Commands that need a trailing multi-word value (file contents, Lisp source,
+raw sector data) reconstruct it themselves by re-joining every argument after their fixed
+positional ones with a single space — see `mkdir`, `edit`, `write`, `bind`, `parse` and `echo` in
+[`src/commands.rs`](../src/commands.rs). This means `parse` no longer accepts extra numeric/boolean
+arguments after the Lisp source on the command line (that feature is still available to `run`,
+whose Lisp code comes from a file rather than typed argument text).
+
+Every command that takes a NAME and EXT (`run`, `cat`, `mkdir`, `edit`, `eden`) also accepts them
+as one dotted token instead of two words — `run greet.lsp` and `run greet lsp` are equivalent. This
+is handled by `resolve_name_ext` in [`src/commands.rs`](../src/commands.rs) (and separately, with
+its own defaulting logic, in `run_editor` in [`src/editor/mod.rs`](../src/editor/mod.rs) for
+`eden`): if the NAME argument contains a `.`, everything before it is NAME and everything after is
+EXT; otherwise the next argument is taken as EXT.
 
 ## 6. Command reference
 
@@ -80,11 +91,11 @@ Registered in `init_cmds()` in [`src/commands.rs`](../src/commands.rs).
 | Command | Usage | Notes |
 | --- | --- | --- |
 | `formatd` | `formatd` | Writes a fresh FAT16 boot sector, two FATs and an empty root directory to the disk. **Destroys all data.** |
-| `mkdir` | `mkdir?NAME?EXT?data...` | Creates a *file* (the name is a misnomer — there are no directories). Everything from the 4th field on is joined with spaces as the contents. |
-| `cat` | `cat?NAME?EXT` | Prints a file. Fails on non-UTF-8 contents. |
-| `edit` | `edit?NAME?EXT?data` | Replaces a file's contents in one shot, non-interactively. |
-| `eden` | `eden?NAME?EXT` | Opens the full-screen editor (see below). Creates the file if absent. |
-| `run` | `run?NAME?EXT?args...` | Reads a file and executes its contents as a Lisp program. |
+| `mkdir` | `mkdir NAME.EXT data...` | Creates a *file* (the name is a misnomer — there are no directories). Everything after NAME/EXT is joined with spaces as the contents. |
+| `cat` | `cat NAME.EXT` | Prints a file. Fails on non-UTF-8 contents. |
+| `edit` | `edit NAME.EXT data...` | Replaces a file's contents in one shot, non-interactively. Everything after NAME/EXT is joined with spaces as the data. |
+| `eden` | `eden NAME.EXT` | Opens the full-screen editor (see below). Creates the file if absent. |
+| `run` | `run NAME.EXT args...` | Reads a file and executes its contents as a Lisp program. |
 
 Names are upper-cased and padded to the 8.3 layout, so `notes` becomes `NOTES   ` / `TXT`.
 
@@ -92,37 +103,39 @@ Names are upper-cased and padded to the 8.3 layout, so `notes` becomes `NOTES   
 
 | Command | Usage | Notes |
 | --- | --- | --- |
-| `read` | `read?SECTOR` | Dumps 512 raw bytes of a sector as decimal numbers. |
-| `show` | `show?SECTOR` | Prints a sector interpreted as a UTF-8 string. |
-| `write` | `write?SECTOR?data` | Writes up to 512 bytes to a raw sector. Bypasses the filesystem entirely. |
+| `read` | `read SECTOR` | Dumps 512 raw bytes of a sector as decimal numbers. |
+| `show` | `show SECTOR` | Prints a sector interpreted as a UTF-8 string. |
+| `write` | `write SECTOR data...` | Writes up to 512 bytes to a raw sector. Bypasses the filesystem entirely. Everything from the 3rd argument on is joined with spaces as the data. |
 
 ### Shell and system
 
 | Command | Usage | Notes |
 | --- | --- | --- |
-| `echo` | `echo?text` | Prints its first argument. |
+| `echo` | `echo text...` | Prints its arguments, joined with spaces. |
 | `clear` | `clear` | Clears the screen. |
 | `history` | `history` | Prints previously entered commands. |
 | `pong` | `pong` | Launches the game. |
 | `quit` | `quit` | Flushes the disk, masks interrupts and powers off. |
-| `parse` | `parse?(lisp code);` | Evaluates Lisp source given inline. |
-| `bind` | `bind?NAME?(lisp code);` | Registers `NAME` as a new shell command that runs the given Lisp. Persists for the session only. |
+| `parse` | `parse (lisp code);` | Evaluates Lisp source given inline. Everything after `parse` is joined with spaces as the source. |
+| `bind` | `bind NAME (lisp code);` | Registers `NAME` as a new shell command that runs the given Lisp. Everything from the 3rd argument on is joined with spaces as the source. Persists for the session only. |
 
 ### Example session
 
 ```
 > formatd
-> mkdir?greet?lsp?(sys echo "hello from disk");
-> run?greet?lsp
+> mkdir greet.lsp (sys echo "hello from disk");
+> run greet.lsp
 hello from disk
-> bind?greet?(sys echo "hello from a binding");
+> bind greet (sys echo "hello from a binding");
 > greet
 hello from a binding
 ```
 
+`mkdir greet lsp ...` and `run greet lsp` (NAME and EXT as two words) work identically.
+
 ## 7. The `eden` editor
 
-`eden?NAME?EXT` opens a full-screen editor on the VGA text buffer.
+`eden NAME.EXT` opens a full-screen editor on the VGA text buffer.
 
 | Key | Action |
 | --- | --- |
@@ -162,7 +175,7 @@ See [lisp.md](lisp.md) for the language reference. Practical notes:
 - `(error "msg")` calls the current `error` binding and then aborts the program.
 
 ```
-> parse?(def a 3);(for (> a 0) (do (sys echo a) (def a (- a 1))));
+> parse (def a 3);(for (> a 0) (do (sys echo a) (def a (- a 1))));
 3
 2
 1
@@ -174,7 +187,7 @@ See [lisp.md](lisp.md) for the language reference. Practical notes:
 | --- | --- |
 | QEMU: `could not open disk image .../storage.bin` | `storage.bin` missing, or the absolute path in `Cargo.toml` does not match your checkout |
 | `[FS] Error: Invalid BPB found` | Disk is blank or not FAT16 — run `formatd`, then reboot |
-| `'foo' command not found` | Command name is case-sensitive and must be the first `?`-field |
-| Commands silently take the wrong arguments | You used spaces instead of `?` |
+| `'foo' command not found` | Command name is case-sensitive and must be the first whitespace-separated word |
+| Commands silently take the wrong arguments | Extra whitespace changed the argument count/positions |
 | `statements must end with a semicolon` | A Lisp program with no `;` at all |
 | Nothing happens after `cargo run` | `bootimage` not installed, or `qemu-system-x86_64` not on `PATH` |

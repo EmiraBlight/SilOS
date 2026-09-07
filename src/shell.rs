@@ -24,12 +24,14 @@ impl Shell {
         match self.current_cmd.as_str() {
             "" => None,
             s => {
-                let params_as_str: Vec<&str> = s.split("?").collect();
-
                 let params: Vec<String> =
-                    params_as_str.iter().map(|s| s.trim().to_string()).collect();
+                    s.split_whitespace().map(|s| s.to_string()).collect();
 
-                Some(params)
+                if params.is_empty() {
+                    None
+                } else {
+                    Some(params)
+                }
             }
         }
     }

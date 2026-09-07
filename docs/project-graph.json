@@ -77,7 +77,7 @@
       "role": "Prompt line buffer and command history.",
       "keySymbols": ["Shell", "SHELL", "getcmd", "add", "backspace", "clear", "history"],
       "dependsOn": ["vga_buffer"],
-      "notes": ["getcmd splits on '?' — this is the sole definition of the argument separator."]
+      "notes": ["getcmd splits on whitespace via split_whitespace() — this is the sole definition of the argument separator."]
     },
     {
       "id": "programReturn", "path": "src/programReturn.rs", "layer": "shell", "lines": 29,
@@ -292,7 +292,7 @@
       "steps": [
         "shell_task echoes characters and accumulates them into SHELL",
         "Enter sets COMMAND_PENDING",
-        "SHELL::getcmd splits the line on '?' and trims each field",
+        "SHELL::getcmd splits the line on whitespace via split_whitespace()",
         "commands::run_cmd clones the Arc from COMMANDS and releases the lock",
         "the returned CommandFuture is awaited by shell_task",
         "Success.success_code is printed only when print_code is true; ProcessError always prints"

@@ -104,21 +104,32 @@ fn run_edit(args: Vec<String>) ->CommandFuture{
 }
 
 
+/// Resolves a NAME/EXT pair starting at `args[idx]`: either one dotted token ("test.exe") or two
+/// separate tokens ("test" "exe"). Returns (name, ext, index of the first arg after NAME/EXT).
+fn resolve_name_ext(args: &[String], idx: usize) -> Option<(String, String, usize)> {
+    let first = args.get(idx)?;
+    if let Some(pos) = first.find('.') {
+        Some((first[..pos].to_string(), first[pos + 1..].to_string(), idx + 1))
+    } else {
+        Some((first.clone(), args.get(idx + 1)?.clone(), idx + 2))
+    }
+}
+
 fn run_file(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
-        if args.len() < 3 {
+        let Some((name_str, ext_str, next_idx)) = resolve_name_ext(&args, 1) else {
             return Err(ProcessError {
-                error_code: "Usage: run <NAME> <EXT> [args...]".to_string(),
+                error_code: "Usage: run <NAME.EXT | NAME EXT> [args...]".to_string(),
             });
-        }
+        };
 
         let mut filename = [b' '; 8];
-        let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+        let name_bytes = name_str.to_ascii_uppercase().into_bytes();
         let name_len = min(8, name_bytes.len());
         filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
 
         let mut ext = [b' '; 3];
-        let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+        let ext_bytes = ext_str.to_ascii_uppercase().into_bytes();
         let ext_len = min(3, ext_bytes.len());
         ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
 
@@ -140,7 +151,7 @@ fn run_file(args: Vec<String>) -> CommandFuture {
                     }
                     None => {
                         return Err(ProcessError {
-                            error_code: format!("Script {}.{} not found", args[1], args[2]),
+                            error_code: format!("Script {}.{} not found", name_str, ext_str),
                         });
                     }
                 }
@@ -153,8 +164,8 @@ fn run_file(args: Vec<String>) -> CommandFuture {
 
         let mut exec_expr = vec![String::from("exec"), lisp_code];
 
-        if args.len() > 3 {
-            for arg in &args[3..] {
+        if args.len() > next_idx {
+            for arg in &args[next_idx..] {
                 exec_expr.push(arg.clone());
             }
         }
@@ -165,19 +176,19 @@ fn run_file(args: Vec<String>) -> CommandFuture {
 
 fn cat_file(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
-        if args.len() < 3 {
+        let Some((name_str, ext_str, _next_idx)) = resolve_name_ext(&args, 1) else {
             return Err(ProcessError {
-                error_code: "Usage: cat <NAME> <EXT>".to_string(),
+                error_code: "Usage: cat <NAME.EXT | NAME EXT>".to_string(),
             });
-        }
+        };
 
         let mut filename = [b' '; 8];
-        let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+        let name_bytes = name_str.to_ascii_uppercase().into_bytes();
         let name_len = min(8, name_bytes.len());
         filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
 
         let mut ext = [b' '; 3];
-        let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+        let ext_bytes = ext_str.to_ascii_uppercase().into_bytes();
         let ext_len = min(3, ext_bytes.len());
         ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
 
@@ -189,7 +200,7 @@ fn cat_file(args: Vec<String>) -> CommandFuture {
 
                     match core::str::from_utf8(&file_data) {
                         Ok(text) => {
-                            println!("--- {} ---", args[1]);
+                            println!("--- {} ---", name_str);
                             println!("{}", text);
                             println!("------------");
 
@@ -205,7 +216,7 @@ fn cat_file(args: Vec<String>) -> CommandFuture {
                     }
                 }
                 None => Err(ProcessError {
-                    error_code: format!("File {}.{} not found", args[1], args[2]),
+                    error_code: format!("File {}.{} not found", name_str, ext_str),
                 }),
             }
         } else {
@@ -218,23 +229,29 @@ fn cat_file(args: Vec<String>) -> CommandFuture {
 
 fn make_file(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
-        if args.len() < 4 {
+        let Some((name_str, ext_str, next_idx)) = resolve_name_ext(&args, 1) else {
             return Err(ProcessError {
-                error_code: "Usage: mkfile <NAME> <EXT> <data to write>".to_string(),
+                error_code: "Usage: mkdir <NAME.EXT | NAME EXT> <data to write>".to_string(),
+            });
+        };
+
+        if args.len() <= next_idx {
+            return Err(ProcessError {
+                error_code: "Usage: mkdir <NAME.EXT | NAME EXT> <data to write>".to_string(),
             });
         }
 
         let mut filename = [b' '; 8];
-        let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+        let name_bytes = name_str.to_ascii_uppercase().into_bytes();
         let name_len = min(8, name_bytes.len());
         filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
 
         let mut ext = [b' '; 3];
-        let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+        let ext_bytes = ext_str.to_ascii_uppercase().into_bytes();
         let ext_len = min(3, ext_bytes.len());
         ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
 
-        let data_string = args[3..].join(" ");
+        let data_string = args[next_idx..].join(" ");
         let data_bytes = data_string.as_bytes();
 
         let fs_lock = FS.lock();
@@ -243,8 +260,8 @@ fn make_file(args: Vec<String>) -> CommandFuture {
                 Ok(_) => Ok(Success {
                     success_code: format!(
                         "Created {}.{} ({} bytes)",
-                        args[1],
-                        args[2],
+                        name_str,
+                        ext_str,
                         data_bytes.len()
                     ),
                     print_code: true,
@@ -347,7 +364,7 @@ fn read(args: Vec<String>) -> CommandFuture {
 
 fn write(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
-        if args.len() != 3 {
+        if args.len() < 3 {
             return Err(ProcessError {
                 error_code: "Usage: write <sector_index> <string_data>".to_string(),
             });
@@ -357,7 +374,8 @@ fn write(args: Vec<String>) -> CommandFuture {
             error_code: "Sector index must be a valid u32 number".to_string(),
         })?;
 
-        let data_bytes = args[2].as_bytes();
+        let data = args[2..].join(" ");
+        let data_bytes = data.as_bytes();
         if data_bytes.len() > 512 {
             return Err(ProcessError {
                 error_code: format!("Data too large: {} bytes (max 512)", data_bytes.len()),
@@ -386,9 +404,22 @@ fn clear(_args: Vec<String>) -> CommandFuture {
     })
 }
 
-fn bind(args: Vec<String>) -> CommandFuture {
+fn parse_cmd(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
         if args.len() < 2 {
+            return Err(ProcessError {
+                error_code: "expected at least two params".to_string(),
+            });
+        }
+
+        let lisp_code = args[1..].join(" ");
+        interpret(vec![args[0].clone(), lisp_code]).await
+    })
+}
+
+fn bind(args: Vec<String>) -> CommandFuture {
+    Box::pin(async move {
+        if args.len() < 3 {
             return Err(ProcessError {
                 error_code: "invalid number of args".to_string(),
             });
@@ -396,7 +427,7 @@ fn bind(args: Vec<String>) -> CommandFuture {
 
         let command_name = args[1].clone();
 
-        let lisp_code = args[2].clone();
+        let lisp_code = args[2..].join(" ");
 
         let wrapper = move |runtime_args: Vec<String>| {
             let mut exec_expr = vec![String::from("exec"), lisp_code.clone()];
@@ -457,7 +488,7 @@ fn echo(args: Vec<String>) -> CommandFuture {
                 error_code: "Not enough arguments!".to_string(),
             });
         }
-        crate::println!("{}", args[1]);
+        crate::println!("{}", args[1..].join(" "));
         Ok(Success {
             success_code: "worked".to_string(),
             print_code: false,
@@ -467,26 +498,34 @@ fn echo(args: Vec<String>) -> CommandFuture {
 
 fn edit(args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
-        if args.len() != 4 {
+        let Some((name_str, ext_str, next_idx)) = resolve_name_ext(&args, 1) else {
             return Err(ProcessError {
-                error_code: "Usage: edit <name> <ext> <data>".to_string(),
+                error_code: "Usage: edit <NAME.EXT | NAME EXT> <data>".to_string(),
+            });
+        };
+
+        if args.len() <= next_idx {
+            return Err(ProcessError {
+                error_code: "Usage: edit <NAME.EXT | NAME EXT> <data>".to_string(),
             });
         }
 
         let mut filename = [b' '; 8];
-        let name_bytes = args[1].to_ascii_uppercase().into_bytes();
+        let name_bytes = name_str.to_ascii_uppercase().into_bytes();
         let name_len = min(8, name_bytes.len());
         filename[..name_len].copy_from_slice(&name_bytes[..name_len]);
 
         let mut ext = [b' '; 3];
-        let ext_bytes = args[2].to_ascii_uppercase().into_bytes();
+        let ext_bytes = ext_str.to_ascii_uppercase().into_bytes();
         let ext_len = min(3, ext_bytes.len());
         ext[..ext_len].copy_from_slice(&ext_bytes[..ext_len]);
+
+        let data = args[next_idx..].join(" ");
 
         let fs = FS.lock();
 
         if let Some(a) = fs.as_ref() {
-            match a.overwrite_file(filename, ext, args[3].as_bytes()) {
+            match a.overwrite_file(filename, ext, data.as_bytes()) {
                 Ok(_) => Ok(Success {
                     success_code: "Worked".to_string(),
                     print_code: false,
@@ -509,7 +548,7 @@ pub fn init_cmds() {
     c.insert(String::from("clear"), Arc::new(clear));
     c.insert(String::from("history"), Arc::new(history));
     c.insert(String::from("echo"), Arc::new(echo));
-    c.insert(String::from("parse"), Arc::new(interpret));
+    c.insert(String::from("parse"), Arc::new(parse_cmd));
     c.insert(String::from("bind"), Arc::new(bind));
     c.insert(String::from("read"), Arc::new(read));
     c.insert(String::from("write"), Arc::new(write));

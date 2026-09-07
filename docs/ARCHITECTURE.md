@@ -233,7 +233,7 @@ the map and *releases the lock before calling it* — necessary, because a comma
 
 1. Drain `KEY_EVENT_QUEUE`, decode, echo to screen, accumulate into `SHELL`.
 2. On <kbd>Enter</kbd>, set the `COMMAND_PENDING` flag.
-3. If pending, take the line, split on `?`, look up and `await` the command future.
+3. If pending, take the line, split on whitespace, look up and `await` the command future.
 4. Print `Success.success_code` only when `print_code` is set; print any `ProcessError`.
 5. `yield_now().await`.
 

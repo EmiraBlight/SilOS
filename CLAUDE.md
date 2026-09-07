@@ -66,8 +66,9 @@ Breaking any of these produces a kernel that hangs or triple-faults, usually wit
 
 - **Two crates, one tree.** `src/lib.rs` is the library (`myOS`); `src/main.rs` is a separate
   binary that consumes it. Inside the library use `crate::`; in `main.rs` and `tests/` use `myOS::`.
-- **Shell arguments are separated by `?`, not spaces.** Defined solely in `Shell::getcmd`
-  ([src/shell.rs](src/shell.rs)). `echo?hello world` passes one argument, `"hello world"`.
+- **Shell arguments are separated by whitespace.** Defined solely in `Shell::getcmd`
+  ([src/shell.rs](src/shell.rs)), which splits on runs of whitespace via `split_whitespace()`.
+  `echo hello world` passes two arguments, `"hello"` and `"world"`.
 - **Commands are `fn(Vec<String>) -> CommandFuture`**, a `Pin<Box<dyn Future<Output = Result<Success, ProcessError>> + Send>>`.
   `args[0]` is the command name itself.
 - **`Success.print_code`** decides whether the shell echoes the success string. Most commands print
@@ -85,7 +86,7 @@ Breaking any of these produces a kernel that hangs or triple-faults, usually wit
 
 ```
 src/main.rs          boot order        src/commands.rs   command table + shell loop
-src/lib.rs           modules + tests   src/shell.rs      line buffer, '?' splitting
+src/lib.rs           modules + tests   src/shell.rs      line buffer, whitespace splitting
 src/parser.rs        Lisp              src/editor/       eden text editor
 src/fat16.rs         filesystem        src/pong.rs       game
 src/ide.rs           ATA PIO driver    src/vga_buffer.rs print!/println!, terminal

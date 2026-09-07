@@ -9,13 +9,23 @@ use crate::vga_buffer;
 use crate::vga_buffer::BUFFER_WIDTH;
 use crate::vga_buffer::BUFFER_HEIGHT;
 use alloc::vec::Vec;
+use alloc::string::ToString;
 
 
 pub async fn run_editor(args: Vec<String>) {
-    let name_arg = args.get(1).map(|s| s.as_str()).unwrap_or("UNNAMED");
-    let ext_arg = args.get(2).map(|s| s.as_str()).unwrap_or("TXT");
+    let (name_arg, ext_arg) = match args.get(1) {
+        Some(tok) if tok.contains('.') => {
+            let pos = tok.find('.').unwrap();
+            (tok[..pos].to_string(), tok[pos + 1..].to_string())
+        }
+        Some(tok) => (
+            tok.clone(),
+            args.get(2).cloned().unwrap_or_else(|| "TXT".to_string()),
+        ),
+        None => ("UNNAMED".to_string(), "TXT".to_string()),
+    };
 
-    let (fat_name, fat_ext) = format_fat16_name(name_arg, ext_arg);
+    let (fat_name, fat_ext) = format_fat16_name(&name_arg, &ext_arg);
 
     let initial_data = if let Some(fs) = FS.lock().as_ref() {
         if let Some(entry) = fs.find_file(&fat_name, &fat_ext) {
