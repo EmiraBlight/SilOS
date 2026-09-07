@@ -69,6 +69,13 @@ Owns the command table, the shell task, and the implementation of every built-in
   itself.
 - **`run_cmd` clones the `Arc` and drops the lock before calling** — required for reentrancy from
   Lisp's `sys`.
+- **`resolve_name_ext(args, idx)`** is the shared NAME/EXT parser used by `run`, `cat`, `mkdir` and
+  `edit`: `args[idx]` containing a `.` is split into NAME/EXT (consuming one arg); otherwise
+  `args[idx]`/`args[idx+1]` are taken as NAME/EXT separately (consuming two). Returns the index of
+  the first arg after NAME/EXT so callers know where their own trailing data/args start. `eden`
+  has the same dotted-token support but its own copy of the logic in `run_editor`
+  (`src/editor/mod.rs`), since it also has to fall back to `"UNNAMED"`/`"TXT"` defaults when no
+  name is given at all.
 - **Gotcha:** `mkdir` creates a *file*, not a directory. There are no directories.
 
 ### `src/shell.rs`
@@ -78,8 +85,11 @@ The line editor state for the prompt: the in-progress command string and the his
 
 - **Key symbols:** `Shell`, `SHELL` (global `Mutex<Shell>`), `add`, `backspace`, `getcmd`, `clear`,
   `history`
-- **`getcmd` is where `?` becomes the argument separator** — it splits the buffer on `"?"` and trims
-  each field. Change argument syntax here and nowhere else.
+- **`getcmd` is where whitespace becomes the argument separator** — it splits the buffer with
+  `split_whitespace()`, so repeated/leading/trailing spaces never produce empty arguments. Change
+  argument syntax here and nowhere else. Commands that need a multi-word trailing value (`mkdir`,
+  `edit`, `write`, `bind`, `parse`, `echo`) re-join their remaining args with spaces themselves in
+  `src/commands.rs`.
 - **Gotcha:** `clear()` pushes the current command into history *and* clears it; it is not a
   "discard" method despite the name.
 
@@ -101,9 +111,13 @@ A complete tree-walking Lisp: tokenizer, reader, evaluator, environment and stan
 
 - **Key symbols:** `RispExp` (the value enum), `RispEnv`, `RispErr`, `RispLambda`, `tokenize`,
   `parse`, `parse_atom`, `eval`, `default_env`, `env_for_lambda`, `parse_eval`, `interpret`
-- **`interpret(expr: Vec<String>)`** is the public entry point and is itself registered as the
-  `parse` command. `expr[1]` is the source; `expr[2..]` are arguments injected as `n0`/`n1`
-  (numbers) and `b0`/`b1` (booleans).
+- **`interpret(expr: Vec<String>)`** is the public entry point. `expr[1]` is the source;
+  `expr[2..]` are arguments injected as `n0`/`n1` (numbers) and `b0`/`b1` (booleans). The `parse`
+  command (`commands::parse_cmd`) wraps it by joining all of its own args after the command name
+  into a single source string, so typed `parse` calls no longer support trailing `n`/`b` arguments
+  (whitespace is now the shell's argument separator and can't be told apart from spaces inside the
+  Lisp source). `run` and `bind` still pass `expr[2..]` through untouched, since their Lisp source
+  comes from a file or a stored string rather than being re-split from typed args.
 - **Special forms handled in `eval`:** `if`, `def`, `fn`, `sys`, `quote`, `and`, `or`, `for`,
   `append`, `pop`, `mset`, `mdel`, `do`, `error`
 - **Builtins in `default_env`:** `+ - * / & = != > >= < <=`, `list`, `[]`, `len`, `!!`, `map`,
