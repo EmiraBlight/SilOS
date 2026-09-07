@@ -4,6 +4,42 @@ This document outlines the syntax, data types, and core features of the kernel's
 
 
 
+## Implementation Status
+
+> **This section reflects what `src/parser.rs` actually implements.** The reference below describes
+> the intended language; several features are documented but not yet built. Verified against
+> `src/parser.rs` on 2026-09-06.
+
+**Implemented special forms:** `if`, `def`, `fn`, `sys`, `quote`, `and`, `or`, `for`, `do`,
+`error`, `append`, `pop`, `mset`, `mdel`
+
+**Implemented builtins:** `+` `-` `*` `/` `&` `=` `!=` `>` `>=` `<` `<=`, `list`, `[]`, `len`,
+`!!`, `map`, `mkeys`
+
+**Documented below but NOT implemented:**
+
+| Feature | Status |
+| --- | --- |
+| `let` (local scoping) | Not implemented — every `def` binding is global |
+| `not` | Not implemented — use `(= x false)` |
+| `concat` | Not implemented — no concatenation builtin exists |
+| `\|` (bitwise OR) | Not implemented — only `&` exists |
+| `^` (bitwise XOR) | Not implemented |
+| `<<`, `>>` (shifts) | Not implemented |
+
+**Corrections to the text below:**
+
+- The loop form is spelled **`for`**, not `while`. §5 is headed "While Loops" but its example shows
+  the correct `for` keyword.
+- `/` does **not** truncate towards zero. All numbers are `f64` and division is floating point, so
+  `(/ 10 5 4)` evaluates to `0.5`, not `0`.
+- The `sys` examples in §8 name commands that do not exist. The real command list is in
+  [docs/USER_GUIDE.md](USER_GUIDE.md#6-command-reference); through `sys`, arguments are
+  passed as separate forms, e.g. `(sys cat "notes" "txt")`.
+- Only `n0`, `n1`, `b0` and `b1` are pre-seeded with defaults. Higher indices exist only when
+  enough arguments were actually passed.
+
+
 ## 1. Syntax Overview
 * **Statements:** All top-level statements must end with a semicolon `;`.
 * **Comments:** Comments are enclosed within pound signs `# ... #`.

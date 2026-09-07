@@ -1,0 +1,428 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schemaVersion": "1.0",
+  "generated": "2026-09-06",
+  "project": {
+    "name": "SilOS",
+    "crateName": "myOS",
+    "description": "Bare-metal x86_64 hobby OS kernel in Rust: async shell, FAT16 on ATA PIO, VGA text UI, Lisp interpreter, text editor.",
+    "language": "rust",
+    "edition": "2024",
+    "toolchain": "nightly-2026-07-01",
+    "runtime": "no_std, freestanding, single core, ring 0, cooperative async",
+    "target": "x86_64-myOs.json",
+    "entryPoints": {
+      "kernel": "src/main.rs::kernel_main",
+      "library": "src/lib.rs"
+    },
+    "docs": {
+      "readme": "README.md",
+      "agentGuide": "CLAUDE.md",
+      "architecture": "docs/ARCHITECTURE.md",
+      "fileMap": "docs/FILE_MAP.md",
+      "userGuide": "docs/USER_GUIDE.md",
+      "lispReference": "docs/lisp.md"
+    }
+  },
+
+  "commands": {
+    "build": "cargo build",
+    "run": "cargo run",
+    "test": "cargo test",
+    "check": "cargo check",
+    "prerequisites": [
+      "cargo install bootimage",
+      "rustup component add rust-src llvm-tools-preview",
+      "qemu-system-x86_64 on PATH",
+      "dd if=/dev/zero of=storage.bin bs=1M count=32"
+    ],
+    "notes": "cargo run and cargo test both boot QEMU and are interactive/long-running; prefer cargo check or cargo build when only verifying compilation."
+  },
+
+  "layers": [
+    { "id": "entry",   "label": "Entry points",  "modules": ["main", "lib"] },
+    { "id": "app",     "label": "Applications",  "modules": ["editor", "pong", "parser"] },
+    { "id": "shell",   "label": "Shell layer",   "modules": ["commands", "shell", "programReturn"] },
+    { "id": "runtime", "label": "Async runtime", "modules": ["task", "task::executor", "task::keyboard", "input"] },
+    { "id": "device",  "label": "Devices",       "modules": ["vga_buffer", "canvas", "serial", "ide", "fat16", "power"] },
+    { "id": "cpu",     "label": "CPU / memory",  "modules": ["gdt", "interrupts", "memory", "allocator"] },
+    { "id": "util",    "label": "Unused",        "modules": ["hashmap"] }
+  ],
+
+  "nodes": [
+    {
+      "id": "main", "path": "src/main.rs", "layer": "entry", "lines": 71,
+      "role": "Kernel entry point; ordered subsystem bring-up, then spawns the shell and keyboard tasks on the executor.",
+      "keySymbols": ["kernel_main", "panic"],
+      "dependsOn": ["lib", "allocator", "fat16", "memory", "commands", "task::executor", "task::keyboard"],
+      "notes": ["Separate crate from the library; refers to it as myOS:: not crate::.", "Contains a leftover TEST.TXT smoke-test write on every boot."]
+    },
+    {
+      "id": "lib", "path": "src/lib.rs", "layer": "entry", "lines": 128,
+      "role": "Library crate root: module declarations plus the custom test harness and CPU init.",
+      "keySymbols": ["init", "hlt_loop", "test_runner", "Testable", "test_panic_handler", "QemuExitCode", "exit_qemu"],
+      "dependsOn": ["gdt", "interrupts", "vga_buffer", "serial"]
+    },
+
+    {
+      "id": "commands", "path": "src/commands.rs", "layer": "shell", "lines": 559,
+      "role": "Command table, shell main loop, and every built-in command implementation.",
+      "keySymbols": ["CommandFuture", "COMMANDS", "shell_task", "run_cmd", "init_cmds", "get_command_list", "COMMAND_PENDING"],
+      "dependsOn": ["parser", "editor", "pong", "shell", "programReturn", "fat16", "ide", "power", "vga_buffer", "input", "interrupts", "task::executor"],
+      "extendHere": "Add a shell command: write fn name(args: Vec<String>) -> CommandFuture, register it in init_cmds().",
+      "notes": ["run_cmd drops COMMANDS.lock() before invoking, enabling reentrancy from Lisp's sys form.", "mkdir creates a file, not a directory."]
+    },
+    {
+      "id": "shell", "path": "src/shell.rs", "layer": "shell", "lines": 61,
+      "role": "Prompt line buffer and command history.",
+      "keySymbols": ["Shell", "SHELL", "getcmd", "add", "backspace", "clear", "history"],
+      "dependsOn": ["vga_buffer"],
+      "notes": ["getcmd splits on '?' — this is the sole definition of the argument separator."]
+    },
+    {
+      "id": "programReturn", "path": "src/programReturn.rs", "layer": "shell", "lines": 29,
+      "role": "Result types returned by every command.",
+      "keySymbols": ["Success", "ProcessError"],
+      "dependsOn": []
+    },
+    {
+      "id": "parser", "path": "src/parser.rs", "layer": "app", "lines": 1041,
+      "role": "Tree-walking Lisp interpreter: tokenizer, reader, async evaluator, environment, standard library.",
+      "keySymbols": ["RispExp", "RispEnv", "RispErr", "RispLambda", "tokenize", "parse", "parse_atom", "eval", "default_env", "env_for_lambda", "parse_eval", "interpret"],
+      "dependsOn": ["commands", "programReturn", "vga_buffer"],
+      "specialForms": ["if", "def", "fn", "sys", "quote", "and", "or", "for", "append", "pop", "mset", "mdel", "do", "error"],
+      "builtins": ["+", "-", "*", "/", "&", "=", "!=", ">", ">=", "<", "<=", "list", "[]", "len", "!!", "map", "mkeys"],
+      "notes": [
+        "eval returns Pin<Box<dyn Future>> rather than being an async fn so it can recurse — do not simplify.",
+        "sys evaluates args and calls commands::run_cmd; this is the Lisp-to-kernel bridge.",
+        "interpret splits source on ';' then pops the last fragment, so source must end with ';'."
+      ]
+    },
+
+    {
+      "id": "task", "path": "src/task/mod.rs", "layer": "runtime", "lines": 38,
+      "role": "Task wrapper and monotonic task IDs.",
+      "keySymbols": ["Task", "TaskId"],
+      "dependsOn": []
+    },
+    {
+      "id": "task::executor", "path": "src/task/executor.rs", "layer": "runtime", "lines": 129,
+      "role": "Cooperative single-core executor with a lock-free ready queue and cached wakers.",
+      "keySymbols": ["Executor", "spawn", "run", "run_ready_tasks", "sleep_if_idle", "TaskWaker", "yield_now", "YieldNow"],
+      "dependsOn": ["task"],
+      "notes": ["No preemption: every kernel loop must await yield_now() or the machine hangs.", "sleep_if_idle does cli / check / sti+hlt to avoid lost wakeups.", "Ready queue capacity 100; overflow panics."]
+    },
+    {
+      "id": "task::keyboard", "path": "src/task/keyboard.rs", "layer": "runtime", "lines": 86,
+      "role": "Scancode stream and the task that decodes scancodes into KeyEvents.",
+      "keySymbols": ["add_scancode", "ScancodeStream", "print_keypresses", "SCANCODE_QUEUE", "WAKER"],
+      "dependsOn": ["input", "vga_buffer"],
+      "notes": ["add_scancode is called from the IRQ handler and must remain lock-free.", "print_keypresses prints nothing despite its name.", "INPUT_QUEUE and add_processed_char are dead code."]
+    },
+    {
+      "id": "input", "path": "src/input.rs", "layer": "runtime", "lines": 13,
+      "role": "Global decoded-key inbox drained by whichever application is in the foreground.",
+      "keySymbols": ["KEY_EVENT_QUEUE", "pop_key"],
+      "dependsOn": [],
+      "notes": ["Exactly one consumer at a time: shell_task, run_editor or PongGame::run."]
+    },
+
+    {
+      "id": "vga_buffer", "path": "src/vga_buffer.rs", "layer": "device", "lines": 249,
+      "role": "80x25 VGA text terminal; home of print!/println!, colour, scrolling and hardware cursor.",
+      "keySymbols": ["print!", "println!", "_print", "Writer", "WRITER", "Color", "ColorCode", "ScreenChar", "BUFFER_WIDTH", "BUFFER_HEIGHT", "_backspace", "write_char_at", "clear_screen", "update_cursor"],
+      "dependsOn": [],
+      "notes": ["_print wraps access in without_interrupts to avoid deadlocking against a printing IRQ handler.", "Writer::clear skips row 24."]
+    },
+    {
+      "id": "canvas", "path": "src/canvas.rs", "layer": "device", "lines": 42,
+      "role": "Stateless random-access view of the VGA buffer, used only by Pong.",
+      "keySymbols": ["TextCanvas", "set_char", "clear", "VGA_TEXT_ADDR"],
+      "dependsOn": ["vga_buffer"],
+      "notes": ["Aliases 0xb8000 with WRITER; safe only because the two are never active at once."]
+    },
+    {
+      "id": "serial", "path": "src/serial.rs", "layer": "device", "lines": 41,
+      "role": "UART 16550 on port 0x3F8 — how test output escapes QEMU to the host.",
+      "keySymbols": ["SERIAL1", "serial_print!", "serial_println!"],
+      "dependsOn": []
+    },
+    {
+      "id": "ide", "path": "src/ide.rs", "layer": "device", "lines": 124,
+      "role": "Polling PIO ATA driver for the primary bus, ports 0x1F0-0x1F7.",
+      "keySymbols": ["AtaDrive", "IDE", "read_sector", "write_sector_bytes", "get_max_lba", "flush_cache"],
+      "dependsOn": [],
+      "notes": ["Every operation busy-waits on BSY/DRQ with no timeout.", "The ATA IRQ handler exists but is not used for completion."]
+    },
+    {
+      "id": "fat16", "path": "src/fat16.rs", "layer": "device", "lines": 469,
+      "role": "FAT16 filesystem implemented directly over the ATA driver.",
+      "keySymbols": ["Fat16FileSystem", "FS", "Bpb", "DirectoryEntry", "init", "read_file", "write_new_file", "overwrite_file", "find_file", "find_file_location", "format_drive", "cluster_to_lba", "get_fat_entry", "set_fat_entry", "find_free_cluster", "free_cluster_chain"],
+      "dependsOn": ["ide", "vga_buffer"],
+      "notes": ["Root directory only: no subdirectories, no long names, no delete.", "8.3 names, upper-cased and space-padded by the caller.", "FS is None when the disk is not valid FAT16 — all callers must handle it.", "Takes IDE.lock() internally; never hold IDE.lock() across a call in here."]
+    },
+    {
+      "id": "power", "path": "src/power.rs", "layer": "device", "lines": 47,
+      "role": "Clean shutdown: quiesce the disk, mask interrupts, try emulator power-off ports.",
+      "keySymbols": ["shutdown", "teardown"],
+      "dependsOn": ["fat16", "ide", "lib"],
+      "notes": ["Takes and drops FS.lock() before cli, because a spinlock held past cli could never be released."]
+    },
+
+    {
+      "id": "gdt", "path": "src/gdt.rs", "layer": "cpu", "lines": 53,
+      "role": "GDT and TSS, including the IST stack that makes double-fault recovery possible.",
+      "keySymbols": ["GDT", "TSS", "Selectors", "DOUBLE_FAULT_IST_INDEX", "init"],
+      "dependsOn": [],
+      "notes": ["gdt::init() must run before interrupts::init_idt()."]
+    },
+    {
+      "id": "interrupts", "path": "src/interrupts.rs", "layer": "cpu", "lines": 115,
+      "role": "IDT setup and PIC remapping; exception and IRQ handlers.",
+      "keySymbols": ["IDT", "init_idt", "PICS", "PIC_1_OFFSET", "PIC_2_OFFSET", "InterruptIndex", "keyboard_interrupt_handler", "timer_interrupt_handler", "ata_interrupt_handler", "page_fault_handler", "breakpoint_handler", "double_fault_handler"],
+      "dependsOn": ["gdt", "task::keyboard", "vga_buffer", "shell", "lib"],
+      "notes": ["Handlers must stay lock-free beyond the lock-free queues.", "LAUNCH_PONG is written by commands::pong but never read."]
+    },
+    {
+      "id": "memory", "path": "src/memory.rs", "layer": "cpu", "lines": 129,
+      "role": "Page table access via the bootloader's physical-memory offset, and a boot-map frame allocator.",
+      "keySymbols": ["init", "BootInfoFrameAllocator", "active_level_4_table", "translate_addr", "EmptyFrameAllocator", "create_example_mapping"],
+      "dependsOn": [],
+      "notes": ["allocate_frame is O(n) per call.", "Frames are never freed.", "translate_addr, EmptyFrameAllocator and create_example_mapping are unused tutorial leftovers."]
+    },
+    {
+      "id": "allocator", "path": "src/allocator.rs", "layer": "cpu", "lines": 54,
+      "role": "Kernel heap: maps 8 MiB at 0x4444_4444_0000 and hands it to linked_list_allocator.",
+      "keySymbols": ["ALLOCATOR", "HEAP_START", "HEAP_SIZE", "init_heap", "Dummy"],
+      "dependsOn": ["memory"],
+      "notes": ["Nothing may allocate before init_heap runs.", "Dummy is an unused example allocator."]
+    },
+
+    {
+      "id": "editor", "path": "src/editor/mod.rs", "layer": "app", "lines": 279,
+      "role": "eden: full-screen text editor over the VGA buffer, saves on Esc.",
+      "keySymbols": ["run_editor", "Editor", "insert_char", "insert_newline", "backspace", "draw", "move_cursor_left", "move_cursor_right", "move_cursor_up", "move_cursor_down", "TerminalDevice", "VgaTerminal", "format_fat16_name"],
+      "dependsOn": ["fat16", "vga_buffer", "input", "task::executor"],
+      "notes": ["Rendering goes through the TerminalDevice trait, so the core is testable against a mock backend.", "No scrolling, no quit-without-save, no 80-column clamp.", "EditorModel is an unused struct hinting at the intended scrolling design."]
+    },
+    {
+      "id": "pong", "path": "src/pong.rs", "layer": "app", "lines": 183,
+      "role": "Two-player Pong on the 80x25 text console.",
+      "keySymbols": ["PongGame", "run", "update", "wait"],
+      "dependsOn": ["canvas", "input", "programReturn", "task::executor", "vga_buffer"],
+      "notes": ["Reads raw KeyEvents to track key-down/key-up for held paddles.", "wait() is a 1e6 nop spin, so speed depends on host CPU."]
+    },
+
+    {
+      "id": "hashmap", "path": "src/hashmap.rs", "layer": "util", "lines": 87,
+      "role": "Hand-written hash map. Entirely unused — the kernel uses BTreeMap.",
+      "keySymbols": ["HashMap", "Tuple", "Hashable"],
+      "dependsOn": [],
+      "notes": ["Bug: put/remove omit the % buckets.len() that get applies; any hash >= 128 panics on insert."]
+    }
+  ],
+
+  "edges": [
+    { "from": "main", "to": "lib", "kind": "uses" },
+    { "from": "main", "to": "allocator", "kind": "init" },
+    { "from": "main", "to": "memory", "kind": "init" },
+    { "from": "main", "to": "fat16", "kind": "init" },
+    { "from": "main", "to": "commands", "kind": "spawns" },
+    { "from": "main", "to": "task::executor", "kind": "runs" },
+    { "from": "main", "to": "task::keyboard", "kind": "spawns" },
+    { "from": "lib", "to": "gdt", "kind": "init" },
+    { "from": "lib", "to": "interrupts", "kind": "init" },
+    { "from": "commands", "to": "parser", "kind": "invokes", "note": "the 'parse' and 'bind' commands" },
+    { "from": "parser", "to": "commands", "kind": "invokes", "note": "the 'sys' special form — deliberate cycle" },
+    { "from": "commands", "to": "editor", "kind": "invokes" },
+    { "from": "commands", "to": "pong", "kind": "invokes" },
+    { "from": "commands", "to": "shell", "kind": "uses" },
+    { "from": "commands", "to": "programReturn", "kind": "uses" },
+    { "from": "commands", "to": "fat16", "kind": "uses" },
+    { "from": "commands", "to": "ide", "kind": "uses" },
+    { "from": "commands", "to": "power", "kind": "uses" },
+    { "from": "commands", "to": "input", "kind": "consumes" },
+    { "from": "commands", "to": "task::executor", "kind": "yields" },
+    { "from": "editor", "to": "fat16", "kind": "uses" },
+    { "from": "editor", "to": "vga_buffer", "kind": "draws" },
+    { "from": "editor", "to": "input", "kind": "consumes" },
+    { "from": "pong", "to": "canvas", "kind": "draws" },
+    { "from": "pong", "to": "input", "kind": "consumes" },
+    { "from": "canvas", "to": "vga_buffer", "kind": "shares-memory", "note": "both alias 0xb8000" },
+    { "from": "fat16", "to": "ide", "kind": "uses" },
+    { "from": "power", "to": "fat16", "kind": "quiesces" },
+    { "from": "power", "to": "ide", "kind": "flushes" },
+    { "from": "interrupts", "to": "task::keyboard", "kind": "enqueues" },
+    { "from": "interrupts", "to": "gdt", "kind": "requires" },
+    { "from": "task::keyboard", "to": "input", "kind": "produces" },
+    { "from": "task::executor", "to": "task", "kind": "schedules" },
+    { "from": "allocator", "to": "memory", "kind": "requires" }
+  ],
+
+  "flows": [
+    {
+      "name": "boot",
+      "description": "Bootloader hands off to the kernel and control ends in the executor.",
+      "steps": [
+        "bootloader 0.9 → entry_point!(kernel_main) with &'static BootInfo",
+        "myOS::init(): gdt::init → interrupts::init_idt → PICS.initialize → sti",
+        "memory::init(phys_mem_offset) → OffsetPageTable",
+        "BootInfoFrameAllocator::init(&boot_info.memory_map)",
+        "allocator::init_heap → alloc is usable from this point on",
+        "fat16::init() reads LBA 0 and validates the BPB",
+        "commands::init_cmds() populates the COMMANDS table",
+        "Executor::new + spawn(print_keypresses) + spawn(shell_task) + run() — never returns"
+      ]
+    },
+    {
+      "name": "keystroke",
+      "description": "A physical key press reaching an application.",
+      "steps": [
+        "IRQ1 → interrupts::keyboard_interrupt_handler reads port 0x60",
+        "task::keyboard::add_scancode pushes onto lock-free SCANCODE_QUEUE and wakes WAKER",
+        "task::keyboard::print_keypresses polls ScancodeStream and decodes via pc_keyboard",
+        "KeyEvent pushed onto input::KEY_EVENT_QUEUE",
+        "foreground consumer calls input::pop_key(): shell_task, run_editor or PongGame::run",
+        "consumer runs its own pc_keyboard decoder to get DecodedKey (Pong uses KeyEvent directly)"
+      ]
+    },
+    {
+      "name": "command-execution",
+      "description": "A typed line becoming a running command.",
+      "steps": [
+        "shell_task echoes characters and accumulates them into SHELL",
+        "Enter sets COMMAND_PENDING",
+        "SHELL::getcmd splits the line on '?' and trims each field",
+        "commands::run_cmd clones the Arc from COMMANDS and releases the lock",
+        "the returned CommandFuture is awaited by shell_task",
+        "Success.success_code is printed only when print_code is true; ProcessError always prints"
+      ]
+    },
+    {
+      "name": "file-write",
+      "description": "Bytes reaching the disk.",
+      "steps": [
+        "caller pads a name into 8.3 form ([u8;8], [u8;3]), upper-cased",
+        "FS.lock() → Fat16FileSystem::write_new_file or overwrite_file",
+        "overwrite_file frees the existing cluster chain first",
+        "find_free_cluster scans the FAT; set_fat_entry links the chain",
+        "cluster_to_lba converts to an LBA; ide::write_sector_bytes issues ATA 0x30 per sector",
+        "the directory entry is written back with the new first cluster and size"
+      ]
+    },
+    {
+      "name": "lisp-syscall",
+      "description": "Lisp reaching back into the kernel.",
+      "steps": [
+        "commands::interpret builds a default_env and injects every command name as a Symbol",
+        "numeric/boolean script args are bound to n0/n1 and b0/b1",
+        "source is split on ';' (the final fragment is discarded) and each statement is parse_eval'd",
+        "eval encounters (sys ...) → evaluates and stringifies the args",
+        "commands::run_cmd is called reentrantly and its future is awaited",
+        "the result becomes RispExp::Syscall, or a RispErr on failure"
+      ]
+    }
+  ],
+
+  "invariants": [
+    { "id": "no-alloc-before-heap", "rule": "Nothing may allocate before allocator::init_heap runs.", "enforcedBy": "src/main.rs boot ordering" },
+    { "id": "always-yield", "rule": "Every long-running loop must await task::executor::yield_now(); there is no preemption.", "enforcedBy": "convention" },
+    { "id": "lock-free-irq", "rule": "Interrupt handlers must not take spinlocks beyond the lock-free queues.", "enforcedBy": "convention", "seeAlso": "src/interrupts.rs" },
+    { "id": "lock-order-fs-ide", "rule": "Lock order is FS then IDE, never the reverse; fat16 methods take IDE.lock() internally.", "enforcedBy": "convention" },
+    { "id": "no-lock-past-cli", "rule": "Never hold a spinlock across interrupts::disable(); it could never be released.", "enforcedBy": "src/power.rs::teardown" },
+    { "id": "vga-without-interrupts", "rule": "Access to WRITER from interruptible code goes through without_interrupts.", "enforcedBy": "src/vga_buffer.rs::_print" },
+    { "id": "reentrant-run-cmd", "rule": "run_cmd releases COMMANDS.lock() before invoking so commands can recurse.", "enforcedBy": "src/commands.rs::run_cmd" },
+    { "id": "gdt-before-idt", "rule": "gdt::init() must precede interrupts::init_idt() because of the double-fault IST entry.", "enforcedBy": "src/lib.rs::init" },
+    { "id": "single-key-consumer", "rule": "Only one application drains input::KEY_EVENT_QUEUE at a time.", "enforcedBy": "convention" }
+  ],
+
+  "tests": [
+    { "path": "tests/basic_boot.rs", "harness": true, "proves": "println! works on a bare boot with no subsystem init" },
+    { "path": "tests/heap_allocations.rs", "harness": true, "proves": "heap allocation, reallocation and reuse of freed memory" },
+    { "path": "tests/stack_overflow.rs", "harness": false, "proves": "the double-fault IST catches a guard-page hit instead of triple-faulting" },
+    { "path": "tests/should_panic.rs", "harness": false, "proves": "a failing assertion is detected as a panic" },
+    { "path": "src/lib.rs", "harness": true, "proves": "inline #[test_case]: breakpoint exception is handled" },
+    { "path": "src/vga_buffer.rs", "harness": true, "proves": "inline #[test_case]s: println output, scrolling, buffer contents" }
+  ],
+
+  "config": [
+    { "path": "Cargo.toml", "role": "Manifest; QEMU run/test args, harness=false test entries, nonstandard_style allow, panic=abort", "gotcha": "storage.bin path under [package.metadata.bootimage].run-args is hard-coded absolute and must be edited for other checkouts." },
+    { "path": ".cargo/config.toml", "role": "Default target, build-std for core/compiler_builtins/alloc, bootimage runner for cfg(target_os = \"none\")" },
+    { "path": "rust-toolchain.toml", "role": "Pins nightly-2026-07-01 with rust-src and llvm-tools-preview" },
+    { "path": "x86_64-myOs.json", "role": "Custom bare-metal target: os none, no red zone, soft float, rust-lld, panic abort" },
+    { "path": "storage.bin", "role": "FAT16 disk image mounted as IDE disk 1", "gotcha": "Git-ignored and not created for you; make it with dd before first boot." },
+    { "path": "qemu-system-x86_64", "role": "Stray empty file in the repo root with no purpose." }
+  ],
+
+  "knownIssues": [
+    { "file": "Cargo.toml", "issue": "storage.bin path is absolute and machine-specific", "severity": "blocks-other-checkouts" },
+    { "file": "docs/lisp.md", "issue": "Documents let, not, concat and bitwise | ^ << >> which are not implemented", "severity": "doc-drift" },
+    { "file": "docs/lisp.md", "issue": "Calls the loop form a while loop; the keyword is 'for'", "severity": "doc-drift" },
+    { "file": "src/hashmap.rs", "issue": "put/remove omit the % buckets.len() that get applies; hash >= 128 panics. Module is unused.", "severity": "bug" },
+    { "file": "src/parser.rs", "issue": "interpret discards everything after the final ';'", "severity": "surprising" },
+    { "file": "src/commands.rs", "issue": "mkdir creates a file, not a directory", "severity": "naming" },
+    { "file": "src/vga_buffer.rs", "issue": "Writer::clear skips row 24", "severity": "bug" },
+    { "file": "src/main.rs", "issue": "Writes a leftover TEST.TXT smoke-test file on every boot", "severity": "cruft" },
+    { "file": "src/memory.rs", "issue": "allocate_frame is O(n) per call; frames are never freed", "severity": "performance" },
+    { "file": "src/task/executor.rs", "issue": "Ready queue capped at 100; overflow panics", "severity": "limit" },
+    { "file": "src/ide.rs", "issue": "All I/O busy-waits with no timeout; a stuck drive hangs the kernel", "severity": "robustness" },
+    { "file": "src/editor/mod.rs", "issue": "No scrolling, no quit-without-save, no 80-column clamp", "severity": "limit" },
+    { "file": "src/interrupts.rs", "issue": "LAUNCH_PONG is written but never read", "severity": "dead-code" },
+    { "file": "src/task/keyboard.rs", "issue": "INPUT_QUEUE and add_processed_char are unreachable", "severity": "dead-code" },
+    { "file": "src/memory.rs", "issue": "translate_addr, EmptyFrameAllocator, create_example_mapping unused", "severity": "dead-code" },
+    { "file": "src/allocator.rs", "issue": "Dummy allocator unused", "severity": "dead-code" },
+    { "file": "src/editor/mod.rs", "issue": "EditorModel struct unused", "severity": "dead-code" }
+  ],
+
+  "recipes": [
+    {
+      "task": "Add a shell command",
+      "files": ["src/commands.rs"],
+      "steps": [
+        "Write fn my_cmd(args: Vec<String>) -> CommandFuture returning Box::pin(async move { ... }).",
+        "args[0] is the command name; real arguments start at args[1].",
+        "Return Ok(Success { success_code, print_code }) or Err(ProcessError { error_code }).",
+        "Register it in init_cmds() with c.insert(String::from(\"my_cmd\"), Arc::new(my_cmd)).",
+        "It becomes callable from Lisp via (sys my_cmd ...) automatically."
+      ]
+    },
+    {
+      "task": "Add a Lisp builtin",
+      "files": ["src/parser.rs"],
+      "steps": [
+        "For a pure function: add a data.insert(...) with RispExp::Func in default_env().",
+        "For a form needing lazy evaluation or env access: add a match arm in eval's `match s.as_str()`.",
+        "Document it in docs/lisp.md and add it to the builtins/specialForms list in docs/project-graph.json."
+      ]
+    },
+    {
+      "task": "Add a kernel background task",
+      "files": ["src/main.rs", "src/task/executor.rs"],
+      "steps": [
+        "Write an async fn returning ().",
+        "executor.spawn(Task::new(my_task())) in kernel_main before executor.run().",
+        "Ensure every loop iteration awaits yield_now()."
+      ]
+    },
+    {
+      "task": "Add a new filesystem operation",
+      "files": ["src/fat16.rs", "src/commands.rs"],
+      "steps": [
+        "Add the method to impl Fat16FileSystem, taking IDE.lock() internally as the existing methods do.",
+        "Expose it as a command in commands.rs, handling the FS == None case with 'File system not mounted'.",
+        "Remember names are 8.3, upper-cased and space-padded."
+      ]
+    },
+    {
+      "task": "Add an interrupt handler",
+      "files": ["src/interrupts.rs"],
+      "steps": [
+        "Add a variant to InterruptIndex with the correct PIC-offset vector.",
+        "Write extern \"x86-interrupt\" fn handler(_stack_frame: InterruptStackFrame).",
+        "Register it in the IDT lazy_static.",
+        "End with PICS.lock().notify_end_of_interrupt(...) for hardware IRQs.",
+        "Keep the body lock-free — enqueue work for a task instead of doing it inline."
+      ]
+    }
+  ]
+}
