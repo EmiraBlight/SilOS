@@ -420,6 +420,13 @@ fn bind(args: Vec<String>) -> CommandFuture {
     })
 }
 
+fn quit(_args: Vec<String>) -> CommandFuture {
+    Box::pin(async move {
+        crate::println!("Shutting down...");
+        crate::power::shutdown()
+    })
+}
+
 fn pong(_args: Vec<String>) -> CommandFuture {
     Box::pin(async move {
         crate::interrupts::LAUNCH_PONG.store(true, core::sync::atomic::Ordering::Relaxed);
@@ -513,6 +520,7 @@ pub fn init_cmds() {
     c.insert(String::from("run"), Arc::new(run_file));
     c.insert(String::from("edit"), Arc::new(edit));
     c.insert(String::from("eden"), Arc::new(run_edit));
+    c.insert(String::from("quit"), Arc::new(quit));
 }
 
 pub fn run_cmd(cmd: Vec<String>) -> Result<CommandFuture, ProcessError> {

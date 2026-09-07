@@ -22,6 +22,7 @@ pub mod ide;
 pub mod input;
 pub mod parser;
 pub mod pong;
+pub mod power;
 pub mod programReturn;
 pub mod task;
 pub mod editor;
